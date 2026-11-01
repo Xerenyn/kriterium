@@ -78,7 +78,7 @@ function createWindow() {
         try {
           if (process.env.KRIT_ROUTE) {
             await mainWindow.webContents.executeJavaScript('location.hash = ' + JSON.stringify(process.env.KRIT_ROUTE))
-            await new Promise((resolve) => setTimeout(resolve, 900))
+            await new Promise((resolve) => setTimeout(resolve, waitMs))
           }
           if (process.env.KRIT_SMOKE) {
             const code = await fs.readFile(process.env.KRIT_SMOKE, 'utf8')
@@ -157,6 +157,7 @@ function registerIpc() {
   ipcMain.handle('cloud:listProfiles', (_e, query) => cloud.listPublicProfiles(query))
   ipcMain.handle('cloud:publicProfile', (_e, handle) => cloud.publicProfile(handle))
   ipcMain.handle('cloud:steamSearch', (_e, query) => cloud.searchSteam(query))
+  ipcMain.handle('cloud:steamFeatured', (_e, section) => cloud.steamFeatured(section))
   ipcMain.handle('cloud:steamDetails', (_e, steamAppId) => cloud.steamDetails(steamAppId))
   ipcMain.handle('cloud:steamReviews', (_e, steamAppId) => cloud.steamReviews(steamAppId))
   ipcMain.handle('cloud:publicGameSearch', (_e, query) => cloud.publicGameSearch(query))

@@ -33,6 +33,22 @@ function createCloud(configPath, safeStorage, options = {}) {
   const defaultAnonKey = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_ANON_KEY
   let config = { url: defaultUrl, anonKey: defaultAnonKey, encryptedSession: '' }
   let session = null
+  const steamDetailsCache = new Map()
+  let featuredCache = { ts: 0, data: null }
+  const CURATED_GAMES = [
+    { steamAppId: 1086940, title: "Baldur's Gate 3" },
+    { steamAppId: 1245620, title: 'ELDEN RING' },
+    { steamAppId: 1145350, title: 'Hades II' },
+    { steamAppId: 1145360, title: 'Hades' },
+    { steamAppId: 632470, title: 'Disco Elysium - The Final Cut' },
+    { steamAppId: 1091500, title: 'Cyberpunk 2077' },
+    { steamAppId: 367520, title: 'Hollow Knight' },
+    { steamAppId: 292030, title: 'Ведьмак 3: Дикая Охота' },
+    { steamAppId: 646570, title: 'Slay the Spire' },
+    { steamAppId: 427520, title: 'Factorio' },
+    { steamAppId: 504230, title: 'Celeste' },
+    { steamAppId: 1174180, title: 'Red Dead Redemption 2' }
+  ]
   let loaded = false
   let writeQueue = Promise.resolve()
 
@@ -308,25 +324,89 @@ function createCloud(configPath, safeStorage, options = {}) {
       if (query.length < 2) return []
       const url = 'https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: 'ru' })
       const result = await fetchJson(url)
-      return (Array.isArray(result.items) ? result.items : []).slice(0, 20).map((item) => ({
+      const baseItems = (Array.isArray(result.items) ? result.items : []).slice(0, 16).map((item) => ({
         steamAppId: Number(item.id),
         title: String(item.name || ''),
         image: String(item.tiny_image || ''),
+        headerImage: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + Number(item.id) + '/header.jpg',
         price: item.price?.final ? item.price.final / 100 : null,
         currency: item.price?.currency || 'RUB',
         storeUrl: 'https://store.steampowered.com/app/' + Number(item.id) + '/'
       })).filter((item) => Number.isSafeInteger(item.steamAppId) && item.steamAppId > 0)
+      return await this.enrichSteamList(baseItems, 6)
+    },
+
+    async enrichSteamList(items, maxEnrich = 4) {
+      return items.map((item) => {
+        const cached = steamDetailsCache.get(item.steamAppId)
+        if (cached && Date.now() - cached.ts < 600000) {
+          return { ...item, ...cached.data, image: cached.data.headerImage || item.headerImage || item.image }
+        }
+        return item
+      })
+    },
+
+    async steamFeatured(section = 'featured') {
+      const nowMs = Date.now()
+      if (!featuredCache.data || nowMs - featuredCache.ts > 300000) {
+        try {
+          featuredCache = {
+            ts: nowMs,
+            data: await fetchJson('https://store.steampowered.com/api/featuredcategories/?l=russian&cc=ru')
+          }
+        } catch {
+          featuredCache = { ts: nowMs, data: {} }
+        }
+      }
+      const fc = featuredCache.data || {}
+      const pick = (key) => (Array.isArray(fc[key]?.items) ? fc[key].items : [])
+        .filter((it) => it && Number(it.type || 0) === 0 && Number.isSafeInteger(Number(it.id)) && Number(it.id) > 0)
+        .map((it) => ({
+          steamAppId: Number(it.id),
+          title: String(it.name || ''),
+          image: String(it.header_image || it.large_capsule_image || it.small_capsule_image || ''),
+          headerImage: String(it.header_image || it.large_capsule_image || ''),
+          price: it.final_price ? it.final_price / 100 : null,
+          discountPercent: Number(it.discount_percent) || 0,
+          currency: it.currency || 'RUB',
+          storeUrl: 'https://store.steampowered.com/app/' + Number(it.id) + '/'
+        }))
+
+      let list = []
+      if (section === 'top_sellers') list = pick('top_sellers')
+      else if (section === 'new_releases') list = pick('new_releases')
+      else if (section === 'specials') list = pick('specials')
+      else {
+        const curated = CURATED_GAMES.map((g) => ({
+          steamAppId: g.steamAppId,
+          title: g.title,
+          image: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + g.steamAppId + '/header.jpg',
+          headerImage: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + g.steamAppId + '/header.jpg',
+          storeUrl: 'https://store.steampowered.com/app/' + g.steamAppId + '/'
+        }))
+        const merged = curated.concat(pick('top_sellers'), pick('specials'))
+        const seen = new Set()
+        list = merged.filter((it) => {
+          if (seen.has(it.steamAppId)) return false
+          seen.add(it.steamAppId)
+          return true
+        })
+      }
+      const enriched = await this.enrichSteamList(list.slice(0, 12), 6)
+      return enriched.filter((it) => it.title)
     },
 
     async steamDetails(steamAppId) {
       const id = Number(steamAppId)
       if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Некорректный Steam App ID.')
+      const cached = steamDetailsCache.get(id)
+      if (cached && Date.now() - cached.ts < 600000) return cached.data
       const url = 'https://store.steampowered.com/api/appdetails/?' + new URLSearchParams({ appids: String(id), l: 'russian', cc: 'ru' })
       const result = await fetchJson(url)
       const entry = result[String(id)]
       if (!entry?.success || !entry.data) throw new Error('Steam не нашёл страницу этой игры.')
       const game = entry.data
-      return {
+      const data = {
         steamAppId: id,
         title: String(game.name || ''),
         description: String(game.short_description || ''),
@@ -335,13 +415,25 @@ function createCloud(configPath, safeStorage, options = {}) {
         developers: Array.isArray(game.developers) ? game.developers : [],
         publishers: Array.isArray(game.publishers) ? game.publishers : [],
         genres: Array.isArray(game.genres) ? game.genres.map((g) => g.description).filter(Boolean) : [],
+        tags: Array.isArray(game.categories) ? game.categories.map((c) => c.description).filter(Boolean).slice(0, 12) : [],
+        screenshots: Array.isArray(game.screenshots) ? game.screenshots.slice(0, 12).map((s) => ({
+          id: s.id,
+          thumb: String(s.path_thumbnail || ''),
+          full: String(s.path_full || s.path_thumbnail || '')
+        })).filter((s) => s.thumb) : [],
         platforms: game.platforms ? Object.entries(game.platforms).filter(([, enabled]) => enabled).map(([name]) => name) : [],
         headerImage: String(game.header_image || ''),
+        isFree: !!game.is_free,
+        priceText: game.is_free ? 'Бесплатно' : (game.price_overview?.final_formatted || ''),
+        discountPercent: Number(game.price_overview?.discount_percent) || 0,
+        pcMinimum: String(game.pc_requirements?.minimum || ''),
         storeUrl: 'https://store.steampowered.com/app/' + id + '/',
         metacritic: game.metacritic ? { score: Number(game.metacritic.score) || null, url: String(game.metacritic.url || '') } : null,
         steamRecommendationCount: Number(game.recommendations?.total) || 0,
         steamUserScore: null
       }
+      steamDetailsCache.set(id, { ts: Date.now(), data })
+      return data
     },
 
     async steamReviews(steamAppId) {
@@ -409,7 +501,7 @@ function createCloud(configPath, safeStorage, options = {}) {
         platforms: details.platforms,
         header_image: details.headerImage,
         store_url: details.storeUrl,
-        source_data: { about: details.about, metacritic: details.metacritic },
+        source_data: { about: details.about, metacritic: details.metacritic, tags: details.tags || [], screenshots: details.screenshots || [] },
         added_by: session.user.id
       }
       const inserted = await rest('games?on_conflict=steam_app_id&select=id,steam_app_id,title,slug,description,release_date,developers,publishers,genres,platforms,header_image,store_url', {

@@ -7,6 +7,7 @@ window.K = window.K || {};
   const U = window.K.util
   const api = window.krit
   let catalogSearch = ''
+  let catalogSection = 'featured'
   let profileSearch = ''
   let accountMode = 'signin'
   let searchTimer = null
@@ -255,54 +256,168 @@ window.K = window.K || {};
 
   /* ---------- Steam catalog ---------- */
 
+  const QUICK_GENRES = [
+    ['RPG', 'RPG'],
+    ['Roguelike', 'Рогалик'],
+    ['Action', 'Экшен'],
+    ['Strategy', 'Стратегия'],
+    ['Horror', 'Хоррор'],
+    ['Metroidvania', 'Метроидвания'],
+    ['Shooter', 'Шутер'],
+    ['Survival', 'Выживание'],
+    ['Co-op', 'Кооператив'],
+    ['Indie', 'Инди'],
+    ['Puzzle', 'Головоломка']
+  ]
+
   function renderCatalog(view) {
-    const html = head('Каталог', 'Найти игру', 'Ищите игру по названию. Данные страницы загружаются из Steam; оценки участников хранятся отдельно.') +
-      '<div class="tools"><label class="search">' + U.icon('search', 15) +
-      '<input id="steam-search" type="text" maxlength="100" placeholder="Название игры…" value="' + U.attr(catalogSearch) + '"></label>' +
-      '<button class="btn primary" id="steam-search-button">Найти в Steam</button><span class="spacer"></span><span id="steam-result-count" class="tiny dim"></span></div>' +
+    const sections = [
+      ['featured', 'Популярные и культовые'],
+      ['top_sellers', 'Лидеры продаж Steam'],
+      ['new_releases', 'Новинки Steam'],
+      ['specials', 'Скидки Steam']
+    ]
+    const html = head('Каталог Steam', 'Каталог игр', 'Игры подтягиваются напрямую из Steam с обложками, жанрами, тегами, скриншотами и оценками.') +
+      '<div class="tools" style="margin-bottom:10px"><label class="search">' + U.icon('search', 15) +
+      '<input id="steam-search" type="text" maxlength="100" placeholder="Найти любую игру в Steam…" value="' + U.attr(catalogSearch) + '"></label>' +
+      '<button class="btn primary" id="steam-search-button">Найти в Steam</button>' +
+      (catalogSearch ? '<button class="btn ghost sm" id="steam-clear-button">Сбросить поиск</button>' : '') +
+      '<span class="spacer"></span><span id="steam-result-count" class="tiny dim"></span></div>' +
+      '<div class="row wrap" style="gap:8px;margin-bottom:12px">' +
+      '<div class="tabs" id="steam-sections">' +
+      sections.map(([id, label]) =>
+        '<button class="tab' + (!catalogSearch && catalogSection === id ? ' active' : '') + '" data-section="' + id + '">' + U.esc(label) + '</button>'
+      ).join('') + '</div>' +
+      '<div class="row wrap" id="steam-quick-tags" style="gap:5px">' +
+      QUICK_GENRES.map(([q, label]) =>
+        '<button class="chip' + (catalogSearch.toLowerCase() === q.toLowerCase() ? ' accent' : '') + '" style="cursor:pointer" data-quick-tag="' + U.attr(q) + '">' + U.esc(label) + '</button>'
+      ).join('') + '</div></div>' +
       '<div id="steam-results"></div>' +
-      '<div class="tiny dim" style="margin-top:16px;line-height:1.6">Карточка игры привязана к Steam App ID — оценки разных участников относятся к одной и той же игре.</div>'
+      '<div class="tiny dim" style="margin-top:16px;line-height:1.6">Каждая страница игры привязана к Steam App ID — оценки разных участников собираются на одной общей странице игры.</div>'
     view.innerHTML = shell(html)
+
     const input = U.$('#steam-search', view)
-    const run = async () => {
+    const runSearch = async () => {
       catalogSearch = input.value.trim()
-      await searchSteamInto(view, catalogSearch)
+      renderCatalog(view)
     }
-    U.$('#steam-search-button', view).addEventListener('click', run)
-    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') run() })
+    U.$('#steam-search-button', view).addEventListener('click', runSearch)
+    U.$('#steam-clear-button', view)?.addEventListener('click', () => {
+      catalogSearch = ''
+      renderCatalog(view)
+    })
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') runSearch() })
     input.addEventListener('input', () => {
       clearTimeout(searchTimer)
-      if (input.value.trim().length >= 3) searchTimer = setTimeout(run, 500)
+      if (input.value.trim().length >= 3) {
+        searchTimer = setTimeout(() => {
+          catalogSearch = input.value.trim()
+          loadCatalogResults(view)
+        }, 550)
+      }
     })
-    if (catalogSearch.length >= 2) searchSteamInto(view, catalogSearch)
+    U.$$('[data-section]', view).forEach((btn) => btn.addEventListener('click', () => {
+      catalogSection = btn.dataset.section
+      catalogSearch = ''
+      renderCatalog(view)
+    }))
+    U.$$('[data-quick-tag]', view).forEach((btn) => btn.addEventListener('click', () => {
+      catalogSearch = btn.dataset.quickTag
+      renderCatalog(view)
+    }))
+
+    loadCatalogResults(view)
   }
 
-  async function searchSteamInto(view, query) {
+  async function loadCatalogResults(view) {
     const target = U.$('#steam-results', view)
     const count = U.$('#steam-result-count', view)
-    if (!target || !query) {
-      if (target) target.innerHTML = '<div class="empty"><h3>Введите название игры</h3><p>Результаты будут загружены из каталога Steam.</p></div>'
-      if (count) count.textContent = ''
-      return
-    }
-    target.innerHTML = '<div class="card pad small muted">Ищем в Steam…</div>'
+    if (!target) return
+    target.innerHTML = '<div class="card pad small muted">Загружаем игры, жанры, теги и скриншоты из Steam…</div>'
     try {
-      const results = await api.cloud.steamSearch(query)
+      const results = catalogSearch.length >= 2
+        ? await api.cloud.steamSearch(catalogSearch)
+        : await api.cloud.steamFeatured(catalogSection)
       if (!target.isConnected || location.hash !== '#/catalog') return
-      if (count) count.textContent = results.length + ' ' + U.plural(results.length, 'результат', 'результата', 'результатов')
-      target.innerHTML = results.length ? '<div class="game-grid">' + results.map((game) => steamResultCard(game)).join('') + '</div>' :
-        '<div class="empty"><h3>Не нашли игру</h3><p>Попробуйте другое название.</p></div>'
+      if (count) count.textContent = results.length + ' ' + U.plural(results.length, 'игра', 'игры', 'игр')
+      target.innerHTML = results.length
+        ? '<div class="steam-catalog-grid">' + results.map((game) => steamResultCard(game)).join('') + '</div>'
+        : '<div class="empty"><h3>Игры не найдены</h3><p>Попробуйте другое название или выберите подборку выше.</p></div>'
+      bindCatalogScreenshots(target)
+      results.forEach((game) => {
+        if (Array.isArray(game.genres) && game.genres.length) return
+        api.cloud.steamDetails(game.steamAppId).then((details) => {
+          if (!target.isConnected || location.hash !== '#/catalog') return
+          const cardEl = U.$('[data-steam-card="' + game.steamAppId + '"]', target)
+          if (!cardEl) return
+          const tmp = document.createElement('div')
+          tmp.innerHTML = steamResultCard(Object.assign({}, game, details))
+          const fresh = tmp.firstElementChild
+          if (fresh) {
+            cardEl.replaceWith(fresh)
+            bindCatalogScreenshots(fresh)
+          }
+        }).catch(() => {})
+      })
     } catch (err) {
-      target.innerHTML = '<div class="empty"><h3>Поиск не сработал</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
+      target.innerHTML = '<div class="empty"><h3>Не удалось загрузить каталог Steam</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
     }
   }
 
   function steamResultCard(game) {
-    const image = safeSteamImage(game.image)
-    return '<button class="card steam-result" data-route="#/steam/' + game.steamAppId + '">' +
-      (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy">' : '<span class="steam-placeholder">ИГРА</span>') +
-      '<span class="steam-result-info"><b>' + U.esc(game.title) + '</b><small>Steam App ID ' + game.steamAppId + '</small></span>' +
-      '<span class="steam-result-arrow">' + U.icon('arrow', 16) + '</span></button>'
+    const image = safeSteamImage(game.headerImage || game.image)
+    const genres = Array.isArray(game.genres) ? game.genres.slice(0, 4) : []
+    const tags = Array.isArray(game.tags) ? game.tags.slice(0, 4) : []
+    const shots = Array.isArray(game.screenshots) ? game.screenshots.slice(0, 3) : []
+    const metaScore = game.metacritic?.score
+    const dev = Array.isArray(game.developers) && game.developers.length ? game.developers[0] : ''
+    const priceLabel = game.priceText || (game.price ? U.formatNumber(game.price, 0) + ' ₽' : '')
+
+    return '<article class="card steam-catalog-card" data-steam-card="' + game.steamAppId + '">' +
+      '<div class="steam-card-media" data-route="#/steam/' + game.steamAppId + '">' +
+        (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy" class="steam-card-cover">' : '<div class="steam-placeholder">STEAM</div>') +
+        '<div class="steam-card-badges">' +
+          (metaScore ? '<span class="chip good" title="Оценка Metacritic">MC ' + metaScore + '</span>' : '') +
+          (game.discountPercent > 0 ? '<span class="chip accent">−' + game.discountPercent + '%</span>' : '') +
+          (priceLabel ? '<span class="chip">' + U.esc(priceLabel) + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="steam-card-body">' +
+        '<div class="row"><h3 class="steam-card-title" data-route="#/steam/' + game.steamAppId + '">' + U.esc(game.title) + '</h3></div>' +
+        '<div class="tiny dim">' +
+          U.esc([dev, game.releaseDate, game.steamRecommendationCount ? U.formatNumber(game.steamRecommendationCount, 0) + ' отзывов Steam' : 'ID ' + game.steamAppId].filter(Boolean).join(' · ')) +
+        '</div>' +
+        (game.description ? '<p class="steam-card-desc">' + U.esc(game.description) + '</p>' : '') +
+        (genres.length ? '<div class="row wrap" style="gap:5px;margin-top:8px">' + genres.map((g) => '<span class="chip accent">' + U.esc(g) + '</span>').join('') + '</div>' : '') +
+        (tags.length ? '<div class="row wrap" style="gap:5px;margin-top:5px">' + tags.map((t) => '<span class="chip">' + U.esc(t) + '</span>').join('') + '</div>' : '') +
+        (shots.length ? '<div class="steam-card-shots">' + shots.map((s, idx) => {
+          const thumb = safeSteamImage(s.thumb)
+          const full = safeSteamImage(s.full || s.thumb)
+          return thumb ? '<img src="' + U.attr(thumb) + '" data-shot-full="' + U.attr(full) + '" data-shot-title="' + U.attr(game.title + ' — скриншот ' + (idx + 1)) + '" alt="" loading="lazy" title="Нажмите, чтобы увеличить скриншот">' : ''
+        }).join('') + '</div>' : '') +
+        '<div class="row wrap" style="gap:8px;margin-top:auto;padding-top:12px">' +
+          '<button class="btn sm" data-route="#/steam/' + game.steamAppId + '">Страница игры</button>' +
+          '<button class="btn sm primary" data-route="#/review/' + game.steamAppId + '">Оценить</button>' +
+          '<span class="spacer"></span>' +
+          '<span class="tiny dim">#' + game.steamAppId + '</span>' +
+        '</div>' +
+      '</div></article>'
+  }
+
+  function bindCatalogScreenshots(container) {
+    U.$$('[data-shot-full]', container).forEach((img) => {
+      img.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const full = img.dataset.shotFull
+        const title = img.dataset.shotTitle || 'Скриншот'
+        if (!full) return
+        U.openModal({
+          title,
+          width: 980,
+          body: '<img src="' + U.attr(full) + '" alt="" style="width:100%;height:auto;border-radius:12px;display:block">'
+        })
+      })
+    })
   }
 
   function safeSteamImage(value) {
@@ -333,6 +448,7 @@ window.K = window.K || {};
       }
       if (!view.isConnected || location.hash !== '#/steam/' + id) return
       view.innerHTML = shell(steamGameHtml(steam, null, status, shared, sharedError))
+      view.scrollTop = 0
       bindSteamGame(view, steam, null, status, shared)
       api.cloud.steamReviews(id).then((reviews) => {
         if (!view.isConnected || location.hash !== '#/steam/' + id) return
@@ -356,12 +472,27 @@ window.K = window.K || {};
     const internalRows = Array.isArray(shared?.community) ? shared.community : []
     const internal = internalRows[0] || null
     const heroImage = safeSteamImage(steam.headerImage)
-    let html = '<div class="row" style="margin-bottom:14px"><button class="btn ghost sm" data-route="#/catalog">' + U.icon('back', 14) + ' Каталог игр</button>' +
-      '<span class="spacer"></span><button class="btn ghost sm" id="open-steam">Открыть страницу Steam</button></div>'
+    const tags = Array.isArray(steam.tags) ? steam.tags : []
+    const shots = (Array.isArray(steam.screenshots) ? steam.screenshots : [])
+      .map((s) => ({ thumb: safeSteamImage(s.thumb), full: safeSteamImage(s.full || s.thumb) }))
+      .filter((s) => s.thumb)
+
+    let html = '<div class="row wrap" style="margin-bottom:14px"><button class="btn ghost sm" data-route="#/catalog">' + U.icon('back', 14) + ' Каталог игр</button>' +
+      '<span class="spacer"></span>' +
+      (status.signedIn
+        ? '<button class="btn primary sm" data-route="#/review/' + steam.steamAppId + '">' + U.icon('plus', 14) + ' Оценить эту игру</button>'
+        : '<button class="btn primary sm" data-route="#/account">Войдите, чтобы оставить оценку</button>') +
+      '<button class="btn ghost sm" id="open-steam">Открыть в Steam</button></div>'
+
     html += '<div class="card steam-hero">' + (heroImage ? '<img src="' + U.attr(heroImage) + '" alt="" class="steam-hero-image">' : '') +
-      '<div class="steam-hero-content"><div class="eyebrow">Steam App ID ' + steam.steamAppId + (steam.releaseDate ? ' · ' + U.esc(steam.releaseDate) : '') + '</div>' +
+      '<div class="steam-hero-content"><div class="eyebrow">Steam App ID ' + steam.steamAppId + (steam.releaseDate ? ' · ' + U.esc(steam.releaseDate) : '') +
+      (steam.priceText ? ' · ' + U.esc(steam.priceText) : '') + '</div>' +
       '<h1>' + U.esc(steam.title) + '</h1><p>' + U.esc(steam.description || 'Описание пока не добавлено.') + '</p>' +
-      '<div class="row wrap" style="margin-top:12px">' + (steam.genres || []).slice(0, 5).map((g) => '<span class="chip">' + U.esc(g) + '</span>').join('') + '</div></div></div>'
+      '<div class="row wrap" style="margin-top:12px">' +
+      (steam.genres || []).map((g) => '<span class="chip accent">' + U.esc(g) + '</span>').join('') +
+      tags.slice(0, 6).map((t) => '<span class="chip">' + U.esc(t) + '</span>').join('') +
+      '</div></div></div>'
+
     html += '<div class="stats" style="margin-top:14px">' +
       scoreStat('Metacritic', metacriticScore == null ? 'Нет данных' : String(metacriticScore) + ' / 100', meta?.vote_count ? meta.vote_count + ' голосов' : steam.metacritic ? 'по данным Steam' : 'оценка не найдена') +
       scoreStat('Игроки Steam', steamReviews?.percentPositive != null
@@ -372,38 +503,58 @@ window.K = window.K || {};
               : 'Загружаем…',
       steamReviews ? U.formatNumber(steamReviews.total, 0) + ' отзывов' : steam.steamRecommendationCount ? 'в Steam · доля рекомендаций недоступна' : 'загружаем оценки Steam', 'steam-reviews') +
       scoreStat('Критериум', internal?.average_score == null ? 'Пока нет оценок' : U.formatNumber(internal.average_score) + ' / 100', internal ? internal.review_count + ' оценок · жанр «' + internal.genre_id + '»' : 'оценки участников') +
-      scoreStat('Страница в каталоге', game ? 'Добавлена' : 'Ещё не добавлена', game ? 'профили и оценки привязаны к этой игре' : 'добавить может любой участник') +
+      scoreStat('Статус страницы', game ? 'В общем каталоге' : 'Готова к оценке', game ? 'отзывы участников привязаны к игре' : 'страница создастся при первой оценке') +
       '</div>'
+
     if (internalRows.length > 1) {
       html += '<div class="row wrap" style="gap:7px;margin-top:10px"><span class="tiny dim">Средние оценки по жанрам:</span>' +
         internalRows.map((row) => '<span class="chip">' + U.esc(row.genre_id) + ' · ' + U.formatNumber(row.average_score) + ' (' + row.review_count + ')</span>').join('') + '</div>'
     }
-    if (game) {
-      html += '<div class="row wrap" style="margin-top:12px">' +
-        (status.signedIn
-          ? '<button class="btn primary" data-route="#/review/' + steam.steamAppId + '">Оценить эту игру</button>'
-          : '<button class="btn primary" data-route="#/account">Войдите, чтобы оставить оценку</button>') +
-        '</div>'
-    }
     if (sharedError) html += '<div class="tiny dim" style="margin:10px 0">Общие оценки временно недоступны: ' + U.esc(sharedError) + '</div>'
+
+    if (shots.length) {
+      html += '<div class="card pad" style="margin-top:16px">' +
+        cardTitle('Скриншоты из Steam', 'Нажмите на миниатюру для переключения или на большой кадр — для увеличения') +
+        '<div class="steam-gallery">' +
+          '<div class="steam-gallery-main"><img id="steam-main-shot" src="' + U.attr(shots[0].full) + '" alt="" data-full="' + U.attr(shots[0].full) + '"></div>' +
+          '<div class="steam-gallery-strip">' +
+            shots.map((s, idx) =>
+              '<button type="button" class="steam-shot-thumb' + (idx === 0 ? ' active' : '') + '" data-shot-idx="' + idx + '" data-shot-src="' + U.attr(s.full) + '">' +
+              '<img src="' + U.attr(s.thumb) + '" alt="" loading="lazy"></button>'
+            ).join('') +
+          '</div>' +
+        '</div></div>'
+    }
+
     html += '<div class="two-col" style="margin-top:16px;align-items:start"><div class="card pad">' +
       cardTitle('Оценки участников', 'Публичные отзывы людей, которые оценивали эту игру.')
-    if (!game) {
-      html += status.signedIn ? '<p class="small muted">Эта игра пока не добавлена в общий каталог.</p><button class="btn primary" id="add-shared-game" style="margin-top:12px">Добавить страницу игры</button>' : authNeeded()
-    } else if (!shared?.reviews?.length) {
-      html += '<div class="empty"><h3>Оценок пока нет</h3><p>Добавьте свою оценку — она появится на общей странице игры.</p></div>'
+    if (!shared?.reviews?.length) {
+      html += '<div class="empty"><h3>Оценок пока нет</h3><p>Станьте первым, кто оценит «' + U.esc(steam.title) + '» по критериям — ваша оценка сразу появится здесь.</p>' +
+        (status.signedIn
+          ? '<button class="btn primary sm" data-route="#/review/' + steam.steamAppId + '">Оценить эту игру</button>'
+          : '<button class="btn primary sm" data-route="#/account">Войти и оценить</button>') +
+        (status.signedIn && !game ? ' <button class="btn ghost sm" id="add-shared-game">Закрепить в каталоге</button>' : '') +
+        '</div>'
     } else {
       html += '<div class="community-reviews">' + shared.reviews.map((review) => reviewCard(review)).join('') + '</div>'
     }
-    html += '</div><div class="card pad">' + cardTitle('Об игре', 'Информация из Steam Store') +
-      '<div class="small muted" style="line-height:1.7">' + U.esc((steam.developers || []).join(', ') || 'Разработчик не указан') +
-      '<br>' + U.esc((steam.publishers || []).join(', ') || 'Издатель не указан') +
-      '<br>' + U.esc((steam.platforms || []).join(' · ') || 'Платформы не указаны') + '</div>' +
+    html += '</div><div class="card pad">' + cardTitle('Об игре и теги Steam', 'Информация из Steam Store') +
+      '<div class="small muted" style="line-height:1.7">' +
+      '<b>Разработчик:</b> ' + U.esc((steam.developers || []).join(', ') || 'не указан') +
+      '<br><b>Издатель:</b> ' + U.esc((steam.publishers || []).join(', ') || 'не указан') +
+      '<br><b>Платформы:</b> ' + U.esc((steam.platforms || []).join(' · ') || 'не указаны') +
+      (steam.releaseDate ? '<br><b>Дата выхода:</b> ' + U.esc(steam.releaseDate) : '') +
+      (steam.priceText ? '<br><b>Цена в Steam:</b> ' + U.esc(steam.priceText) : '') +
+      '</div>' +
+      (steam.genres?.length ? '<div class="divider"></div><div class="tiny dim" style="margin-bottom:6px">ЖАНРЫ</div><div class="row wrap" style="gap:5px">' +
+        steam.genres.map((g) => '<span class="chip accent">' + U.esc(g) + '</span>').join('') + '</div>' : '') +
+      (tags.length ? '<div class="divider"></div><div class="tiny dim" style="margin-bottom:6px">ОСОБЕННОСТИ И ТЕГИ STEAM</div><div class="row wrap" style="gap:5px">' +
+        tags.map((t) => '<span class="chip">' + U.esc(t) + '</span>').join('') + '</div>' : '') +
       (steam.metacritic?.url ? '<div style="margin-top:12px"><button class="btn sm ghost" data-external="' + U.attr(steam.metacritic.url) + '">Открыть Metacritic</button></div>' : '') +
       (otherRatings.length ? '<div class="divider"></div><div class="small" style="font-weight:600;margin-bottom:8px">Другие оценки</div>' + otherRatings.map((rating) =>
         '<div class="row" style="padding:5px 0"><span class="small muted">' + U.esc(rating.source === 'opencritic' ? 'OpenCritic' : rating.source) + '</span><span class="spacer"></span><b>' + U.formatNumber(rating.score) + ' / ' + U.formatNumber(rating.max_score) + '</b>' +
         (rating.url ? '<button class="btn ghost sm" data-external="' + U.attr(rating.url) + '">Открыть</button>' : '') + '</div>').join('') : '') +
-      '<div class="divider"></div><p class="tiny dim">Оценка Metacritic показывается только если она доступна в данных Steam. Источники и дата обновления будут указаны отдельно.</p></div></div>'
+      '<div class="divider"></div><p class="tiny dim">Оценка Metacritic показывается, если она указана в карточке игры Steam.</p></div></div>'
     return html
   }
 
@@ -444,6 +595,27 @@ window.K = window.K || {};
   function bindSteamGame(view, steam, steamReviews, status, shared) {
     U.$('#open-steam', view)?.addEventListener('click', () => api.openExternal(steam.storeUrl))
     U.$$('[data-external]', view).forEach((button) => button.addEventListener('click', () => api.openExternal(button.dataset.external)))
+    const mainShot = U.$('#steam-main-shot', view)
+    U.$$('[data-shot-src]', view).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const src = btn.dataset.shotSrc
+        if (mainShot && src) {
+          mainShot.src = src
+          mainShot.dataset.full = src
+        }
+        U.$$('[data-shot-src]', view).forEach((b) => b.classList.remove('active'))
+        btn.classList.add('active')
+      })
+    })
+    mainShot?.addEventListener('click', () => {
+      const full = mainShot.dataset.full || mainShot.src
+      if (!full) return
+      U.openModal({
+        title: steam.title + ' — скриншот',
+        width: 1020,
+        body: '<img src="' + U.attr(full) + '" alt="" style="width:100%;height:auto;border-radius:12px;display:block">'
+      })
+    })
     U.$('#add-shared-game', view)?.addEventListener('click', async (event) => {
       const button = event.currentTarget
       button.disabled = true
@@ -455,7 +627,7 @@ window.K = window.K || {};
       } catch (err) {
         U.toast(err.message || 'Не удалось добавить игру', 'bad')
         button.disabled = false
-        button.textContent = 'Добавить страницу игры'
+        button.textContent = 'Закрепить в каталоге'
       }
     })
   }

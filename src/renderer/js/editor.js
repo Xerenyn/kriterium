@@ -108,12 +108,13 @@ window.K = window.K || {};
           api.cloud.steamDetails(numericSteamId)
         ])
         if (location.hash !== '#/review/' + numericSteamId) return
-        if (!shared?.game) {
-          view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Страница игры ещё не создана</h3><p>Добавьте игру в общий каталог, прежде чем оставлять оценку.</p><button class="btn" data-route="#/steam/' + numericSteamId + '">К странице игры</button></div></div>'
-          return
+        let sharedGame = shared?.game || null
+        if (!sharedGame) {
+          sharedGame = await api.cloud.addSteamGame(numericSteamId)
         }
+        if (location.hash !== '#/review/' + numericSteamId) return
         steamDetails = details
-        communityGame = { steamAppId: numericSteamId, gameId: shared.game.id, game: shared.game }
+        communityGame = { steamAppId: numericSteamId, gameId: sharedGame.id, game: sharedGame }
       } catch (err) {
         view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Не удалось открыть оценку</h3><p>' + U.esc(err.message || String(err)) + '</p><button class="btn" data-route="#/steam/' + numericSteamId + '">К странице игры</button></div></div>'
         return
