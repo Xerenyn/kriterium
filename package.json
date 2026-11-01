@@ -1,0 +1,16 @@
+{
+  "name": "kriterium",
+  "productName": "Критериум",
+  "version": "1.0.0",
+  "description": "Настольное приложение для глубокой оценки видеоигр по критериям",
+  "main": "main.js",
+  "author": "Личный профиль",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^40.0.0"
+  }
+}
