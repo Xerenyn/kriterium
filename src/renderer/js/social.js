@@ -373,8 +373,8 @@ window.K = window.K || {};
     const dev = Array.isArray(game.developers) && game.developers.length ? game.developers[0] : ''
     const priceLabel = game.priceText || (game.price ? U.formatNumber(game.price, 0) + ' ₽' : '')
 
-    return '<article class="card steam-catalog-card" data-steam-card="' + game.steamAppId + '">' +
-      '<div class="steam-card-media" data-route="#/steam/' + game.steamAppId + '">' +
+    return '<article class="card steam-catalog-card" data-steam-card="' + game.steamAppId + '" data-route="#/steam/' + game.steamAppId + '" style="cursor:pointer">' +
+      '<div class="steam-card-media">' +
         (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy" class="steam-card-cover">' : '<div class="steam-placeholder">STEAM</div>') +
         '<div class="steam-card-badges">' +
           (metaScore ? '<span class="chip good" title="Оценка Metacritic">MC ' + metaScore + '</span>' : '') +
@@ -383,7 +383,7 @@ window.K = window.K || {};
         '</div>' +
       '</div>' +
       '<div class="steam-card-body">' +
-        '<div class="row"><h3 class="steam-card-title" data-route="#/steam/' + game.steamAppId + '">' + U.esc(game.title) + '</h3></div>' +
+        '<div class="row"><h3 class="steam-card-title">' + U.esc(game.title) + '</h3></div>' +
         '<div class="tiny dim">' +
           U.esc([dev, game.releaseDate, game.steamRecommendationCount ? U.formatNumber(game.steamRecommendationCount, 0) + ' отзывов Steam' : 'ID ' + game.steamAppId].filter(Boolean).join(' · ')) +
         '</div>' +
@@ -554,7 +554,28 @@ window.K = window.K || {};
       (otherRatings.length ? '<div class="divider"></div><div class="small" style="font-weight:600;margin-bottom:8px">Другие оценки</div>' + otherRatings.map((rating) =>
         '<div class="row" style="padding:5px 0"><span class="small muted">' + U.esc(rating.source === 'opencritic' ? 'OpenCritic' : rating.source) + '</span><span class="spacer"></span><b>' + U.formatNumber(rating.score) + ' / ' + U.formatNumber(rating.max_score) + '</b>' +
         (rating.url ? '<button class="btn ghost sm" data-external="' + U.attr(rating.url) + '">Открыть</button>' : '') + '</div>').join('') : '') +
+      (steam.supportedLanguages ? '<div class="divider"></div><div class="tiny dim" style="margin-bottom:4px">ЯЗЫКИ</div><div class="tiny muted" style="line-height:1.5">' + U.esc(steam.supportedLanguages) + '</div>' : '') +
       '<div class="divider"></div><p class="tiny dim">Оценка Metacritic показывается, если она указана в карточке игры Steam.</p></div></div>'
+
+    if (steam.aboutText || steam.pcMinimum || steam.achievementsTotal) {
+      html += '<div class="two-col" style="margin-top:16px;align-items:start">' +
+        '<div class="card pad">' + cardTitle('Подробно об игре', 'Полное описание со страницы Steam') +
+        '<div class="small muted" style="white-space:pre-line;line-height:1.68;max-height:420px;overflow-y:auto;padding-right:6px">' +
+        U.esc(steam.aboutText || steam.description || 'Описание отсутствует.') + '</div></div>' +
+        '<div style="display:flex;flex-direction:column;gap:16px">' +
+        (steam.achievementsTotal ? '<div class="card pad">' + cardTitle('Достижения Steam (' + steam.achievementsTotal + ')', 'Примеры достижений этой игры') +
+          '<div class="row wrap" style="gap:8px">' + (steam.achievementsHighlighted || []).map((a) => {
+            const icon = safeSteamImage(a.icon)
+            return '<div class="chip" style="padding:4px 9px;gap:7px">' +
+              (icon ? '<img src="' + U.attr(icon) + '" alt="" style="width:20px;height:20px;border-radius:4px">' : '') +
+              '<span>' + U.esc(a.name) + '</span></div>'
+          }).join('') + '</div></div>' : '') +
+        ((steam.pcMinimum || steam.pcRecommended) ? '<div class="card pad">' + cardTitle('Системные требования (ПК)', 'По данным Steam') +
+          (steam.pcMinimum ? '<div class="tiny muted" style="white-space:pre-line;line-height:1.55">' + U.esc(steam.pcMinimum) + '</div>' : '') +
+          (steam.pcRecommended ? '<div class="divider"></div><div class="tiny muted" style="white-space:pre-line;line-height:1.55">' + U.esc(steam.pcRecommended) + '</div>' : '') +
+          '</div>' : '') +
+        '</div></div>'
+    }
     return html
   }
 

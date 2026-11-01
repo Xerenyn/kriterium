@@ -322,7 +322,7 @@ function createCloud(configPath, safeStorage, options = {}) {
     async searchSteam(term) {
       const query = String(term || '').trim().slice(0, 100)
       if (query.length < 2) return []
-      const url = 'https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: 'ru' })
+      const url = 'https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: 'kz' })
       const result = await fetchJson(url)
       const baseItems = (Array.isArray(result.items) ? result.items : []).slice(0, 16).map((item) => ({
         steamAppId: Number(item.id),
@@ -352,7 +352,7 @@ function createCloud(configPath, safeStorage, options = {}) {
         try {
           featuredCache = {
             ts: nowMs,
-            data: await fetchJson('https://store.steampowered.com/api/featuredcategories/?l=russian&cc=ru')
+            data: await fetchJson('https://store.steampowered.com/api/featuredcategories/?l=russian&cc=kz')
           }
         } catch {
           featuredCache = { ts: nowMs, data: {} }
@@ -401,32 +401,51 @@ function createCloud(configPath, safeStorage, options = {}) {
       if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Некорректный Steam App ID.')
       const cached = steamDetailsCache.get(id)
       if (cached && Date.now() - cached.ts < 600000) return cached.data
-      const url = 'https://store.steampowered.com/api/appdetails/?' + new URLSearchParams({ appids: String(id), l: 'russian', cc: 'ru' })
-      const result = await fetchJson(url)
-      const entry = result[String(id)]
-      if (!entry?.success || !entry.data) throw new Error('Steam не нашёл страницу этой игры.')
+
+      let entry = null
+      for (const cc of ['kz', 'us', 'ru']) {
+        try {
+          const url = 'https://store.steampowered.com/api/appdetails/?' + new URLSearchParams({ appids: String(id), l: 'russian', cc })
+          const result = await fetchJson(url)
+          if (result && result[String(id)]?.success && result[String(id)]?.data) {
+            entry = result[String(id)]
+            break
+          }
+        } catch {
+          /* try next region */
+        }
+      }
+      if (!entry?.success || !entry.data) throw new Error('Steam не вернул данные для этой игры (App ID ' + id + ').')
       const game = entry.data
       const data = {
         steamAppId: id,
         title: String(game.name || ''),
         description: String(game.short_description || ''),
-        about: String(game.about_the_game || ''),
+        aboutText: cleanSteamHtmlToText(game.about_the_game || game.detailed_description || ''),
         releaseDate: game.release_date?.date || '',
         developers: Array.isArray(game.developers) ? game.developers : [],
         publishers: Array.isArray(game.publishers) ? game.publishers : [],
         genres: Array.isArray(game.genres) ? game.genres.map((g) => g.description).filter(Boolean) : [],
-        tags: Array.isArray(game.categories) ? game.categories.map((c) => c.description).filter(Boolean).slice(0, 12) : [],
-        screenshots: Array.isArray(game.screenshots) ? game.screenshots.slice(0, 12).map((s) => ({
+        tags: Array.isArray(game.categories) ? game.categories.map((c) => c.description).filter(Boolean).slice(0, 16) : [],
+        screenshots: Array.isArray(game.screenshots) ? game.screenshots.slice(0, 16).map((s) => ({
           id: s.id,
           thumb: String(s.path_thumbnail || ''),
           full: String(s.path_full || s.path_thumbnail || '')
         })).filter((s) => s.thumb) : [],
+        achievementsTotal: Number(game.achievements?.total) || 0,
+        achievementsHighlighted: Array.isArray(game.achievements?.highlighted) ? game.achievements.highlighted.slice(0, 8).map((a) => ({
+          name: String(a.name || ''),
+          icon: String(a.path || '')
+        })) : [],
+        supportedLanguages: cleanSteamHtmlToText(game.supported_languages || '').replace(/\*\s*озвучка.*$/i, '').trim(),
+        pcMinimum: cleanSteamHtmlToText(game.pc_requirements?.minimum || ''),
+        pcRecommended: cleanSteamHtmlToText(game.pc_requirements?.recommended || ''),
+        website: typeof game.website === 'string' ? game.website : '',
         platforms: game.platforms ? Object.entries(game.platforms).filter(([, enabled]) => enabled).map(([name]) => name) : [],
         headerImage: String(game.header_image || ''),
         isFree: !!game.is_free,
         priceText: game.is_free ? 'Бесплатно' : (game.price_overview?.final_formatted || ''),
         discountPercent: Number(game.price_overview?.discount_percent) || 0,
-        pcMinimum: String(game.pc_requirements?.minimum || ''),
         storeUrl: 'https://store.steampowered.com/app/' + id + '/',
         metacritic: game.metacritic ? { score: Number(game.metacritic.score) || null, url: String(game.metacritic.url || '') } : null,
         steamRecommendationCount: Number(game.recommendations?.total) || 0,
@@ -501,7 +520,7 @@ function createCloud(configPath, safeStorage, options = {}) {
         platforms: details.platforms,
         header_image: details.headerImage,
         store_url: details.storeUrl,
-        source_data: { about: details.about, metacritic: details.metacritic, tags: details.tags || [], screenshots: details.screenshots || [] },
+        source_data: { about: details.aboutText || '', metacritic: details.metacritic, tags: details.tags || [], screenshots: details.screenshots || [] },
         added_by: session.user.id
       }
       const inserted = await rest('games?on_conflict=steam_app_id&select=id,steam_app_id,title,slug,description,release_date,developers,publishers,genres,platforms,header_image,store_url', {
@@ -614,6 +633,25 @@ function parseSteamDate(value) {
   const text = String(value || '')
   const match = text.match(/\b(19|20)\d{2}\b/)
   return match ? match[0] + '-01-01' : null
+}
+
+function cleanSteamHtmlToText(html) {
+  return String(html || '')
+    .replace(/<(video|source|img)[^>]*>/gi, '')
+    .replace(/<\/video>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h1|h2|h3|h4|li|ul)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\r/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
 }
 
 function slugify(value) {
