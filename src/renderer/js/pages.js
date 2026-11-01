@@ -305,6 +305,7 @@ window.K = window.K || {};
       '<pre class="code">' + U.esc(JSON.stringify(examplePatchData(), null, 2)) + '</pre></div>'
 
     view.innerHTML = shell(html)
+    renderOfficialPatchPanel(view)
 
     U.$$('[data-toggle-patch]', view).forEach((btn) => btn.addEventListener('click', async () => {
       await api.patches.toggle(btn.dataset.togglePatch)
@@ -342,6 +343,107 @@ window.K = window.K || {};
       description: patch.description,
       operations: patch.operations || []
     }
+  }
+
+  async function renderOfficialPatchPanel(view) {
+    const inner = U.$('.view-inner', view)
+    if (!inner) return
+    const host = document.createElement('div')
+    host.id = 'official-patch-panel'
+    const pageHeadEl = U.$('.page-head', inner)
+    if (pageHeadEl) pageHeadEl.insertAdjacentElement('afterend', host)
+    try {
+      const status = await api.cloud.status()
+      if (location.hash !== '#/patches' || !host.isConnected) return
+      let patches = []
+      if (status.configured) patches = await api.cloud.listAppPatches()
+      if (location.hash !== '#/patches' || !host.isConnected) return
+      const isDeveloper = status.signedIn ? await api.cloud.isDeveloper().catch(() => false) : false
+      if (location.hash !== '#/patches' || !host.isConnected) return
+
+      let html = '<div class="subhead" style="margin-top:8px"><h3>Официальные патчи</h3><div class="line"></div>' +
+        '<span class="chip">' + (isDeveloper ? 'права разработчика' : 'общие для всех') + '</span></div>'
+      if (!status.configured) {
+        html += '<div class="card pad"><p class="small muted">Подключите общую базу, чтобы загружать официальные патчи. Личные дополнения работают отдельно и видны только на этом компьютере.</p>' +
+          '<button class="btn sm" data-route="#/account" style="margin-top:10px">Настроить общий аккаунт</button></div>'
+      } else {
+        if (isDeveloper) {
+          html += '<div class="card pad" style="margin-bottom:12px"><div class="card-head"><div><div class="card-title">Опубликовать изменение для всех</div>' +
+            '<div class="card-sub">Только аккаунт разработчика может добавлять, отключать и удалять официальные патчи.</div></div></div>' +
+            '<textarea id="official-patch-json" style="min-height:190px;font-family:Consolas,monospace;font-size:11px" placeholder="Вставьте JSON патча с полями id, name и operations"></textarea>' +
+            '<button class="btn primary" id="official-patch-publish" style="margin-top:10px">Опубликовать патч</button></div>'
+        }
+        if (!patches.length) {
+          html += '<div class="empty"><h3>Официальных патчей пока нет</h3><p>' + (isDeveloper ? 'Опубликуйте первый патч выше. Он появится у всех участников.' : 'Здесь появятся изменения, опубликованные разработчиком.') + '</p></div>'
+        } else {
+          html += patches.map((patch) => officialPatchCard(patch, isDeveloper)).join('')
+        }
+      }
+      host.innerHTML = html
+
+      if (isDeveloper) {
+        U.$('#official-patch-publish', host)?.addEventListener('click', async (event) => {
+          const button = event.currentTarget
+          let patch
+          try { patch = JSON.parse(U.$('#official-patch-json', host).value) } catch { U.toast('Проверьте JSON патча', 'bad'); return }
+          const previous = app().cloudPatches.filter((item) => item.patch_id !== patch.id && item.is_enabled)
+          const validationBase = S.buildCatalog(app().base, previous.map((item) => ({ operations: item.operations })), null)
+          const validation = S.validatePatch(patch, validationBase)
+          if (!validation.ok) {
+            U.toast(validation.errors[0] || 'Патч не прошёл проверку', 'bad')
+            return
+          }
+          button.disabled = true
+          button.textContent = 'Публикуем…'
+          try {
+            await api.cloud.publishAppPatch(patch)
+            await app().reloadCloudPatches(true)
+            U.toast('Официальный патч опубликован для всех', 'good')
+          } catch (err) {
+            U.toast(err.message || 'Не удалось опубликовать патч', 'bad')
+            button.disabled = false
+            button.textContent = 'Опубликовать патч'
+          }
+        })
+
+        U.$$('[data-toggle-official]', host).forEach((button) => button.addEventListener('click', async () => {
+          const patch = patches.find((item) => item.patch_id === button.dataset.toggleOfficial)
+          if (!patch) return
+          try {
+            await api.cloud.toggleAppPatch(patch.patch_id, !patch.is_enabled)
+            await app().reloadCloudPatches(true)
+            U.toast(patch.is_enabled ? 'Патч отключён у всех участников' : 'Патч включён для всех', 'good')
+          } catch (err) { U.toast(err.message || 'Не удалось изменить патч', 'bad') }
+        }))
+        U.$$('[data-delete-official]', host).forEach((button) => button.addEventListener('click', async () => {
+          const patch = patches.find((item) => item.patch_id === button.dataset.deleteOfficial)
+          if (!patch) return
+          const ok = await U.confirmDialog({ title: 'Удалить общий патч?', text: '«' + patch.name + '» перестанет применяться у всех участников. Личные оценки при этом сохранятся.', confirmLabel: 'Удалить' })
+          if (!ok) return
+          try {
+            await api.cloud.deleteAppPatch(patch.patch_id)
+            await app().reloadCloudPatches(true)
+            U.toast('Официальный патч удалён', 'good')
+          } catch (err) { U.toast(err.message || 'Не удалось удалить патч', 'bad') }
+        }))
+      }
+    } catch (err) {
+      if (host.isConnected && location.hash === '#/patches') {
+        host.innerHTML = '<div class="subhead"><h3>Официальные патчи</h3><div class="line"></div></div><div class="card pad small muted">Не удалось загрузить общие патчи: ' + U.esc(err.message || String(err)) + '</div>'
+      }
+    }
+  }
+
+  function officialPatchCard(patch, isDeveloper) {
+    return '<div class="card patch-card"><div class="patch-top"><div class="grow"><div class="patch-name">' + U.esc(patch.name) +
+      ' <span class="tiny dim">v' + U.esc(patch.version || '1.0.0') + '</span> ' +
+      (patch.is_enabled ? '<span class="chip good">включён</span>' : '<span class="chip">отключён</span>') + '</div>' +
+      '<div class="tiny dim" style="margin-top:4px">общий патч · ' + U.esc(patch.patch_id) + '</div>' +
+      (patch.description ? '<div class="small muted" style="margin-top:6px">' + U.esc(patch.description) + '</div>' : '') +
+      '<div class="patch-ops">' + S.patchSummary({ operations: patch.operations }).map((op) => '<span class="op-chip">' + U.esc(op.label) + ' ' + op.count + '</span>').join('') + '</div></div>' +
+      (isDeveloper ? '<div class="patch-actions"><button class="switch' + (patch.is_enabled ? ' on' : '') + '" data-toggle-official="' + U.attr(patch.patch_id) + '" title="Включить / выключить у всех"></button>' +
+        '<button class="btn ghost icon" data-delete-official="' + U.attr(patch.patch_id) + '" title="Удалить у всех">' + U.icon('trash', 14) + '</button></div>' : '') +
+      '</div></div>'
   }
 
   function patchCard(patch) {

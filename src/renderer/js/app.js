@@ -9,27 +9,61 @@ window.K = window.K || {};
   const C = window.K.charts
   const api = window.krit
 
+  function cachedOfficialPatches() {
+    try {
+      const value = JSON.parse(localStorage.getItem('kriterium.officialPatches') || '[]')
+      return Array.isArray(value) ? value.filter((patch) => patch && typeof patch.patch_id === 'string' && Array.isArray(patch.operations)) : []
+    } catch { return [] }
+  }
+
   const app = {
     info: null,
     base: null,
     patches: [],
+    cloudPatches: cachedOfficialPatches(),
     profile: { nickname: 'Игрок', tagline: '', avatar: '🎮', accent: '#d8d3c9' },
     games: [],
     ratings: {},
     settings: { showHints: true, step: 0.5 },
+    cloudStatus: { configured: false, signedIn: false },
     cache: new Map(),
     booted: false,
 
     catalog(genreId) {
       const key = genreId || '__all'
       if (!this.cache.has(key)) {
-        this.cache.set(key, S.buildCatalog(this.base, this.patches, genreId || null))
+        const official = this.cloudPatches.map((patch) => ({
+          id: patch.patch_id,
+          enabled: patch.is_enabled,
+          operations: patch.operations
+        }))
+        this.cache.set(key, S.buildCatalog(this.base, official.concat(this.patches), genreId || null))
       }
       return this.cache.get(key)
     },
 
     invalidate() {
       this.cache.clear()
+    },
+
+    async reloadCloudPatches(shouldRender) {
+      if (!this.cloudStatus?.configured) {
+        this.cloudPatches = this.cloudPatches.filter((patch) => patch.is_enabled)
+        try { localStorage.setItem('kriterium.officialPatches', JSON.stringify(this.cloudPatches)) } catch { /* local cache is optional */ }
+        this.invalidate()
+        if (shouldRender && this.booted) this.render()
+        return []
+      }
+      try {
+        this.cloudPatches = await api.cloud.listAppPatches()
+        try { localStorage.setItem('kriterium.officialPatches', JSON.stringify(this.cloudPatches)) } catch { /* local cache is optional */ }
+      } catch (err) {
+        console.warn('Не удалось загрузить официальные патчи:', err.message || err)
+        if (!this.cloudStatus?.signedIn) this.cloudPatches = this.cloudPatches.filter((patch) => patch.is_enabled)
+      }
+      this.invalidate()
+      if (shouldRender && this.booted) this.render()
+      return this.cloudPatches
     },
 
     gameScore(game) {
@@ -77,9 +111,15 @@ window.K = window.K || {};
       if (!view) return
       view.scrollTop = 0
       if (route.name === 'overview') renderOverview(view)
+      else if (route.name === 'catalog') window.K.Social.renderCatalog(view)
+      else if (route.name === 'steam') window.K.Social.renderSteamGame(view, route.id)
+      else if (route.name === 'community') window.K.Social.renderCommunity(view)
+      else if (route.name === 'person') window.K.Social.renderPerson(view, route.id)
+      else if (route.name === 'account') window.K.Social.renderAccount(view)
       else if (route.name === 'library') renderLibrary(view)
       else if (route.name === 'game') renderDetail(view, route.id)
       else if (route.name === 'new') window.K.Editor.render(view, null)
+      else if (route.name === 'review') window.K.Editor.render(view, null, route.id)
       else if (route.name === 'edit') window.K.Editor.render(view, route.id)
       else if (route.name === 'profile') window.K.Pages.renderProfile(view)
       else if (route.name === 'patches') window.K.Pages.renderPatches(view)
@@ -98,11 +138,14 @@ window.K = window.K || {};
     if (!parts.length) return { name: 'overview' }
     if (parts[0] === 'game') return { name: 'game', id: parts[1] }
     if (parts[0] === 'edit') return { name: 'edit', id: parts[1] }
+    if (parts[0] === 'steam') return { name: 'steam', id: parts[1] }
+    if (parts[0] === 'review') return { name: 'review', id: parts[1] }
+    if (parts[0] === 'person') return { name: 'person', id: parts[1] }
     return { name: parts[0] }
   }
 
   function setActiveNav(route) {
-    const map = { overview: '#/overview', new: '#/new', edit: '#/library', library: '#/library', game: '#/library', profile: '#/profile', patches: '#/patches', settings: '#/settings' }
+    const map = { overview: '#/overview', new: '#/new', review: '#/catalog', edit: '#/library', library: '#/library', game: '#/library', catalog: '#/catalog', steam: '#/catalog', community: '#/community', person: '#/community', account: '#/account', profile: '#/profile', patches: '#/patches', settings: '#/settings' }
     U.$$('#nav .nav-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.route === map[route.name])
     })
@@ -600,7 +643,7 @@ window.K = window.K || {};
 
   async function boot() {
     try {
-      const [info, base, patches, profile, games, ratings, showHints, step] = await Promise.all([
+      const [info, base, patches, profile, games, ratings, showHints, step, cloudStatus] = await Promise.all([
         api.info(),
         api.catalog(),
         api.patches.list(),
@@ -608,7 +651,8 @@ window.K = window.K || {};
         api.games.list(),
         api.ratings.all(),
         api.meta.get('showHints', true),
-        api.meta.get('step', 0.5)
+        api.meta.get('step', 0.5),
+        api.cloud.status().catch(() => ({ configured: false, signedIn: false, error: 'Общая база пока недоступна.' }))
       ])
       app.info = info
       app.base = base
@@ -618,6 +662,7 @@ window.K = window.K || {};
       app.ratings = ratings
       app.settings.showHints = showHints !== false
       app.settings.step = [0.5, 1].includes(Number(step)) ? Number(step) : 0.5
+      app.cloudStatus = cloudStatus
       app.booted = true
 
       applyAccent(profile.accent)
@@ -628,6 +673,7 @@ window.K = window.K || {};
 
       if (location.hash) app.render()
       else location.hash = '#/overview'
+      app.reloadCloudPatches(true)
       U.$('#boot').classList.add('hide')
       setTimeout(() => { const b = U.$('#boot'); if (b) b.remove() }, 400)
     } catch (err) {

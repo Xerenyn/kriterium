@@ -77,7 +77,7 @@
   check('патч удаляется', !K.app.catalog('racing').categories.some((c) => c.criteria.some((cr) => cr.id === 'smoke.crit')))
 
   // Маршруты.
-  const routes = ['#/patches', '#/profile', '#/settings', '#/new', '#/library', '#/overview']
+  const routes = ['#/patches', '#/profile', '#/settings', '#/new', '#/library', '#/overview', '#/catalog', '#/community', '#/account', '#/review/440']
   for (const route of routes) {
     location.hash = route
     await new Promise((r) => setTimeout(r, 260))

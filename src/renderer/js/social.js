@@ -1,0 +1,512 @@
+/* Общий каталог игр, публичные профили и учётная запись Supabase. */
+window.K = window.K || {};
+
+(function () {
+  'use strict'
+
+  const U = window.K.util
+  const api = window.krit
+  let catalogSearch = ''
+  let profileSearch = ''
+  let accountMode = 'signin'
+  let searchTimer = null
+
+  function shell(html) {
+    return '<div class="view-inner">' + html + '</div>'
+  }
+
+  function head(eyebrow, title, text, actions) {
+    return '<div class="page-head"><div><div class="eyebrow">' + U.esc(eyebrow) + '</div>' +
+      '<h1 class="page-title">' + U.esc(title) + '</h1>' +
+      (text ? '<p class="page-sub">' + U.esc(text) + '</p>' : '') +
+      '</div>' + (actions ? '<div class="head-actions">' + actions + '</div>' : '') + '</div>'
+  }
+
+  function cardTitle(title, sub) {
+    return '<div class="card-head"><div><div class="card-title">' + U.esc(title) + '</div>' +
+      (sub ? '<div class="card-sub">' + U.esc(sub) + '</div>' : '') + '</div></div>'
+  }
+
+  function authNeeded() {
+    return '<div class="empty"><h3>Нужен аккаунт</h3><p>Войдите, чтобы добавлять игры в общий каталог, публиковать оценки и смотреть профили других участников.</p>' +
+      '<button class="btn primary sm" data-route="#/account">Войти или создать аккаунт</button></div>'
+  }
+
+  async function getStatus() {
+    try {
+      const status = await api.cloud.status()
+      window.K.app.cloudStatus = status
+      return status
+    } catch (err) {
+      return { configured: false, signedIn: false, error: err.message || String(err) }
+    }
+  }
+
+  /* ---------- аккаунт ---------- */
+
+  async function renderAccount(view) {
+    view.innerHTML = shell(head('Сообщество', 'Аккаунт', 'Подключитесь к общей базе, чтобы публиковать оценки и смотреть профили участников.') +
+      '<div class="card pad"><div class="small muted">Загрузка…</div></div>')
+
+    const status = await getStatus()
+    if (location.hash !== '#/account') return
+    if (!status.configured) return renderCloudSetup(view, status)
+    if (status.signedIn) return renderSignedIn(view, status)
+    return renderAuthForm(view, status)
+  }
+
+  function renderCloudSetup(view, status) {
+    const urlValue = U.attr(status.url || '')
+    const html = head('Сообщество', 'Подключение общей базы', 'Сначала укажите проект Supabase. Он будет хранить аккаунты, страницы игр и оценки всех участников.') +
+      (status.error ? '<div class="chip bad" style="margin-bottom:14px">' + U.esc(status.error) + '</div>' : '') +
+      '<div class="card pad" style="max-width:760px">' + cardTitle('Настройка Supabase', 'URL и публичный ключ проекта; ключ хранится локально на этом компьютере.') +
+      '<div class="form-grid">' +
+      '<div class="field span4"><label>Project URL</label><input id="cloud-url" type="text" autocomplete="off" value="' + urlValue + '" placeholder="https://ваш-проект.supabase.co"></div>' +
+      '<div class="field span4"><label>Публичный ключ (publishable / anon)</label><input id="cloud-key" type="text" autocomplete="off" spellcheck="false" placeholder="sb_publishable_… или anon key"></div>' +
+      '</div><div class="row wrap" style="margin-top:14px"><button class="btn primary" id="cloud-save">Подключить</button>' +
+      '<span class="tiny dim">Не вставляйте сюда service_role key.</span><span class="spacer"></span>' +
+      '<button class="btn ghost sm" id="cloud-download-schema">Скачать SQL-схему</button></div>' +
+      '<div class="divider"></div><div class="tiny dim" style="line-height:1.65">Сначала создайте проект Supabase, скачайте SQL-схему и выполните её в SQL Editor. После подключения можно будет создать аккаунт. Инструкция находится в README.</div></div>'
+    view.innerHTML = shell(html)
+    U.$('#cloud-save', view).addEventListener('click', async () => {
+      const button = U.$('#cloud-save', view)
+      button.disabled = true
+      button.textContent = 'Подключаем…'
+      try {
+        const updated = await api.cloud.configure({ url: U.$('#cloud-url', view).value, anonKey: U.$('#cloud-key', view).value })
+        window.K.app.cloudStatus = updated
+        await window.K.app.reloadCloudPatches(false)
+        U.toast('Общая база подключена', 'good')
+        renderAccount(view)
+      } catch (err) {
+        U.toast(err.message || 'Не удалось подключиться', 'bad')
+        button.disabled = false
+        button.textContent = 'Подключить'
+      }
+    })
+    U.$('#cloud-download-schema', view).addEventListener('click', async () => {
+      try {
+        const sql = await api.cloud.setupSql()
+        const result = await api.data.saveText({
+          defaultName: 'kriterium-supabase-schema.sql',
+          content: sql,
+          filters: [{ name: 'SQL', extensions: ['sql'] }]
+        })
+        if (result.ok) U.toast('SQL-схема сохранена', 'good')
+      } catch (err) { U.toast(err.message || 'Не удалось сохранить схему', 'bad') }
+    })
+  }
+
+  function renderAuthForm(view, status) {
+    const registering = accountMode === 'signup'
+    const html = head('Сообщество', 'Аккаунт', 'Один аккаунт — ваши оценки, профиль и отзывы на страницах игр.') +
+      '<div class="card pad" style="max-width:650px">' +
+      cardTitle(registering ? 'Создать аккаунт' : 'Войти', 'Подключено: ' + status.url) +
+      '<div class="tabs" style="margin-bottom:16px"><button class="tab' + (!registering ? ' active' : '') + '" data-mode="signin">Войти</button>' +
+      '<button class="tab' + (registering ? ' active' : '') + '" data-mode="signup">Регистрация</button></div>' +
+      '<div class="form-grid">' +
+      (registering ? '<div class="field span4"><label>Имя в профиле</label><input id="cloud-display" type="text" maxlength="60" placeholder="Как вас будут видеть другие"></div>' : '') +
+      '<div class="field span4"><label>Электронная почта</label><input id="cloud-email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com"></div>' +
+      '<div class="field span4"><label>Пароль (не короче 10 символов)</label><input id="cloud-password" type="password" minlength="10" maxlength="128" autocomplete="' + (registering ? 'new-password' : 'current-password') + '"></div>' +
+      '</div><div class="row wrap" style="margin-top:14px"><button class="btn primary" id="cloud-submit">' + (registering ? 'Создать аккаунт' : 'Войти') + '</button>' +
+      '<span class="spacer"></span><button class="btn ghost sm" id="cloud-change-project">Сменить проект</button></div>' +
+      '<p class="tiny dim" style="margin-top:12px;line-height:1.6">Пароль отправляется только в Supabase по HTTPS. Сессия шифруется средствами Windows и хранится локально.</p></div>'
+    view.innerHTML = shell(html)
+
+    U.$$('[data-mode]', view).forEach((button) => button.addEventListener('click', () => {
+      accountMode = button.dataset.mode
+      renderAuthForm(view, status)
+    }))
+    U.$('#cloud-change-project', view).addEventListener('click', async () => {
+      await api.cloud.signOut()
+      window.K.app.cloudStatus = await api.cloud.status()
+      await window.K.app.reloadCloudPatches(false)
+      // Keep the current project URL visible; the key must be entered again if project changes.
+      renderCloudSetup(view, { configured: false, url: status.url })
+    })
+    U.$('#cloud-submit', view).addEventListener('click', async () => {
+      const button = U.$('#cloud-submit', view)
+      button.disabled = true
+      button.textContent = registering ? 'Создаём…' : 'Входим…'
+      const input = {
+        email: U.$('#cloud-email', view).value,
+        password: U.$('#cloud-password', view).value
+      }
+      try {
+        if (registering) {
+          input.displayName = U.$('#cloud-display', view).value
+          const result = await api.cloud.signUp(input)
+          if (result.confirmationRequired) {
+            U.toast('Проверьте почту и подтвердите регистрацию', 'good')
+            accountMode = 'signin'
+            renderAuthForm(view, status)
+            return
+          }
+        } else {
+          await api.cloud.signIn(input)
+        }
+        window.K.app.cloudStatus = await api.cloud.status()
+        await window.K.app.reloadCloudPatches(false)
+        U.toast(registering ? 'Аккаунт создан' : 'Вы вошли', 'good')
+        renderAccount(view)
+      } catch (err) {
+        U.toast(err.message || 'Не удалось выполнить вход', 'bad')
+        button.disabled = false
+        button.textContent = registering ? 'Создать аккаунт' : 'Войти'
+      }
+    })
+  }
+
+  async function renderSignedIn(view, status) {
+    let profile = null
+    let isDeveloper = false
+    let profileError = ''
+    try {
+      ;[profile, isDeveloper] = await Promise.all([api.cloud.myProfile(), api.cloud.isDeveloper()])
+    } catch (err) {
+      profileError = err.message || String(err)
+    }
+    if (!view.isConnected || location.hash !== '#/account') return
+    const role = isDeveloper ? '<span class="chip accent">Разработчик приложения</span>' : '<span class="chip good">Участник</span>'
+    const html = head('Сообщество', 'Ваш аккаунт', 'Этот аккаунт используется для общих страниц игр и публикации оценок.') +
+      (profileError ? '<div class="chip bad" style="margin-bottom:14px">' + U.esc(profileError) + '</div>' : '') +
+      '<div class="card profile-hero"><div class="avatar-big">' + U.esc(profile?.avatar || '🎮') + '</div>' +
+      '<div class="grow"><h2>' + U.esc(profile?.display_name || 'Игрок') + '</h2>' +
+      '<div class="tagline">@' + U.esc(profile?.handle || 'профиль не создан') + ' · ' + U.esc(status.user?.email || '') + '</div>' +
+      '<div class="row wrap" style="margin-top:9px">' + role + '<span class="chip">' + (profile?.is_public ? 'профиль открыт' : 'профиль закрыт') + '</span></div></div>' +
+      '<div class="row wrap"><button class="btn" data-route="#/community">Участники</button><button class="btn ghost" id="cloud-signout">Выйти</button></div></div>' +
+      '<div class="two-col" style="margin-top:16px"><div class="card pad">' + cardTitle('Публичный профиль', 'Другие участники увидят его в списке, если он открыт.') +
+      '<div class="form-grid"><div class="field span2"><label>Имя</label><input id="pub-display" type="text" maxlength="60" value="' + U.attr(profile?.display_name || '') + '"></div>' +
+      '<div class="field span2"><label>Адрес профиля</label><input id="pub-handle" type="text" maxlength="24" value="' + U.attr(profile?.handle || '') + '" placeholder="латиница, цифры, _"></div>' +
+      '<div class="field span4"><label>О себе</label><textarea id="pub-bio" maxlength="280" placeholder="Коротко о ваших игровых вкусах">' + U.esc(profile?.bio || '') + '</textarea></div>' +
+      '</div><label class="row small muted" style="margin-top:10px"><input id="pub-open" type="checkbox" style="accent-color:var(--accent)"' + (profile?.is_public ? ' checked' : '') + '> Показывать профиль и мои публичные оценки другим участникам</label>' +
+      '<button class="btn primary" id="pub-save" style="margin-top:14px">Сохранить профиль</button></div>' +
+      '<div class="card pad">' + cardTitle('Моя роль', 'Права разработчика назначает только владелец проекта Supabase.') +
+      (isDeveloper ? '<p class="small muted">У вас есть права управлять общим каталогом, внешними оценками, публичными отзывами и официальными патчами.</p>' : '<p class="small muted">Сейчас у вас права участника: можно оценивать игры и управлять своим профилем. Изменять общие данные и патчи нельзя.</p>' +
+        '<button class="btn ghost sm" id="cloud-download-developer-sql" style="margin-top:12px">Скачать SQL для аккаунта разработчика</button>') +
+      '</div></div>'
+    view.innerHTML = shell(html)
+    U.$('#cloud-signout', view).addEventListener('click', async () => {
+      await api.cloud.signOut()
+      window.K.app.cloudStatus = await api.cloud.status()
+      await window.K.app.reloadCloudPatches(false)
+      renderAccount(view)
+    })
+    U.$('#cloud-download-developer-sql', view)?.addEventListener('click', async () => {
+      try {
+        const sql = await api.cloud.bootstrapSql(status.user?.email)
+        const result = await api.data.saveText({
+          defaultName: 'kriterium-developer-account.sql',
+          content: sql,
+          filters: [{ name: 'SQL', extensions: ['sql'] }]
+        })
+        if (result.ok) U.toast('Скрипт сохранён. Выполните его в SQL Editor своего проекта Supabase.', 'good')
+      } catch (err) { U.toast(err.message || 'Не удалось подготовить скрипт', 'bad') }
+    })
+    U.$('#pub-save', view).addEventListener('click', async () => {
+      const button = U.$('#pub-save', view)
+      button.disabled = true
+      try {
+        profile = await api.cloud.updateMyProfile({
+          displayName: U.$('#pub-display', view).value,
+          handle: U.$('#pub-handle', view).value,
+          bio: U.$('#pub-bio', view).value,
+          isPublic: U.$('#pub-open', view).checked
+        })
+        U.toast('Профиль сохранён', 'good')
+        renderSignedIn(view, status)
+      } catch (err) {
+        U.toast(err.message || 'Не удалось сохранить профиль', 'bad')
+        button.disabled = false
+      }
+    })
+  }
+
+  /* ---------- Steam catalog ---------- */
+
+  function renderCatalog(view) {
+    const html = head('Каталог', 'Найти игру', 'Ищите игру по названию. Данные страницы загружаются из Steam; оценки участников хранятся отдельно.') +
+      '<div class="tools"><label class="search">' + U.icon('search', 15) +
+      '<input id="steam-search" type="text" maxlength="100" placeholder="Название игры…" value="' + U.attr(catalogSearch) + '"></label>' +
+      '<button class="btn primary" id="steam-search-button">Найти в Steam</button><span class="spacer"></span><span id="steam-result-count" class="tiny dim"></span></div>' +
+      '<div id="steam-results"></div>' +
+      '<div class="tiny dim" style="margin-top:16px;line-height:1.6">Карточка игры привязана к Steam App ID — оценки разных участников относятся к одной и той же игре.</div>'
+    view.innerHTML = shell(html)
+    const input = U.$('#steam-search', view)
+    const run = async () => {
+      catalogSearch = input.value.trim()
+      await searchSteamInto(view, catalogSearch)
+    }
+    U.$('#steam-search-button', view).addEventListener('click', run)
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') run() })
+    input.addEventListener('input', () => {
+      clearTimeout(searchTimer)
+      if (input.value.trim().length >= 3) searchTimer = setTimeout(run, 500)
+    })
+    if (catalogSearch.length >= 2) searchSteamInto(view, catalogSearch)
+  }
+
+  async function searchSteamInto(view, query) {
+    const target = U.$('#steam-results', view)
+    const count = U.$('#steam-result-count', view)
+    if (!target || !query) {
+      if (target) target.innerHTML = '<div class="empty"><h3>Введите название игры</h3><p>Результаты будут загружены из каталога Steam.</p></div>'
+      if (count) count.textContent = ''
+      return
+    }
+    target.innerHTML = '<div class="card pad small muted">Ищем в Steam…</div>'
+    try {
+      const results = await api.cloud.steamSearch(query)
+      if (!target.isConnected || location.hash !== '#/catalog') return
+      if (count) count.textContent = results.length + ' ' + U.plural(results.length, 'результат', 'результата', 'результатов')
+      target.innerHTML = results.length ? '<div class="game-grid">' + results.map((game) => steamResultCard(game)).join('') + '</div>' :
+        '<div class="empty"><h3>Не нашли игру</h3><p>Попробуйте другое название.</p></div>'
+    } catch (err) {
+      target.innerHTML = '<div class="empty"><h3>Поиск не сработал</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
+    }
+  }
+
+  function steamResultCard(game) {
+    const image = safeSteamImage(game.image)
+    return '<button class="card steam-result" data-route="#/steam/' + game.steamAppId + '">' +
+      (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy">' : '<span class="steam-placeholder">ИГРА</span>') +
+      '<span class="steam-result-info"><b>' + U.esc(game.title) + '</b><small>Steam App ID ' + game.steamAppId + '</small></span>' +
+      '<span class="steam-result-arrow">' + U.icon('arrow', 16) + '</span></button>'
+  }
+
+  function safeSteamImage(value) {
+    try {
+      const url = new URL(String(value || ''))
+      return url.protocol === 'https:' && /(^|\.)(steamstatic\.com|akamaihd\.net)$/.test(url.hostname.split('.').slice(-2).join('.')) ? url.href : ''
+    } catch { return '' }
+  }
+
+  /* ---------- canonical game page ---------- */
+
+  async function renderSteamGame(view, steamAppId) {
+    const id = Number(steamAppId)
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      view.innerHTML = shell(head('Каталог', 'Некорректная ссылка', 'У игры должен быть действительный Steam App ID.') + '<button class="btn" data-route="#/catalog">Вернуться в каталог</button>')
+      return
+    }
+    view.innerHTML = shell('<div class="card pad">Загружаем страницу игры…</div>')
+    try {
+      const [steam, status] = await Promise.all([
+        api.cloud.steamDetails(id),
+        getStatus()
+      ])
+      let shared = null
+      let sharedError = ''
+      if (status.configured) {
+        try { shared = await api.cloud.publicGame(id) } catch (err) { sharedError = err.message || String(err) }
+      }
+      if (!view.isConnected || location.hash !== '#/steam/' + id) return
+      view.innerHTML = shell(steamGameHtml(steam, null, status, shared, sharedError))
+      bindSteamGame(view, steam, null, status, shared)
+      api.cloud.steamReviews(id).then((reviews) => {
+        if (!view.isConnected || location.hash !== '#/steam/' + id) return
+        updateSteamReviewStat(view, reviews, steam.steamRecommendationCount)
+      }).catch(() => {
+        if (!view.isConnected || location.hash !== '#/steam/' + id) return
+        updateSteamReviewStat(view, null, steam.steamRecommendationCount)
+      })
+    } catch (err) {
+      view.innerHTML = shell(head('Каталог', 'Не удалось загрузить игру', err.message || String(err)) +
+        '<button class="btn" data-route="#/catalog">Вернуться к поиску</button>')
+    }
+  }
+
+  function steamGameHtml(steam, steamReviews, status, shared, sharedError) {
+    const game = shared?.game || null
+    const meta = shared?.externalRatings?.find((x) => x.source === 'metacritic')
+    const metacriticScore = meta?.score ?? steam.metacritic?.score
+    const userRating = shared?.externalRatings?.find((x) => x.source === 'steam')
+    const otherRatings = (shared?.externalRatings || []).filter((x) => !['steam', 'metacritic'].includes(x.source))
+    const internalRows = Array.isArray(shared?.community) ? shared.community : []
+    const internal = internalRows[0] || null
+    const heroImage = safeSteamImage(steam.headerImage)
+    let html = '<div class="row" style="margin-bottom:14px"><button class="btn ghost sm" data-route="#/catalog">' + U.icon('back', 14) + ' Каталог игр</button>' +
+      '<span class="spacer"></span><button class="btn ghost sm" id="open-steam">Открыть страницу Steam</button></div>'
+    html += '<div class="card steam-hero">' + (heroImage ? '<img src="' + U.attr(heroImage) + '" alt="" class="steam-hero-image">' : '') +
+      '<div class="steam-hero-content"><div class="eyebrow">Steam App ID ' + steam.steamAppId + (steam.releaseDate ? ' · ' + U.esc(steam.releaseDate) : '') + '</div>' +
+      '<h1>' + U.esc(steam.title) + '</h1><p>' + U.esc(steam.description || 'Описание пока не добавлено.') + '</p>' +
+      '<div class="row wrap" style="margin-top:12px">' + (steam.genres || []).slice(0, 5).map((g) => '<span class="chip">' + U.esc(g) + '</span>').join('') + '</div></div></div>'
+    html += '<div class="stats" style="margin-top:14px">' +
+      scoreStat('Metacritic', metacriticScore == null ? 'Нет данных' : String(metacriticScore) + ' / 100', meta?.vote_count ? meta.vote_count + ' голосов' : steam.metacritic ? 'по данным Steam' : 'оценка не найдена') +
+      scoreStat('Игроки Steam', steamReviews?.percentPositive != null
+        ? U.formatNumber(steamReviews.percentPositive) + '% положительных'
+        : userRating ? U.formatNumber(userRating.score) + ' / 100'
+          : steamReviews ? 'Нет данных'
+            : steam.steamRecommendationCount ? U.formatNumber(steam.steamRecommendationCount, 0) + ' отзывов'
+              : 'Загружаем…',
+      steamReviews ? U.formatNumber(steamReviews.total, 0) + ' отзывов' : steam.steamRecommendationCount ? 'в Steam · доля рекомендаций недоступна' : 'загружаем оценки Steam', 'steam-reviews') +
+      scoreStat('Критериум', internal?.average_score == null ? 'Пока нет оценок' : U.formatNumber(internal.average_score) + ' / 100', internal ? internal.review_count + ' оценок · жанр «' + internal.genre_id + '»' : 'оценки участников') +
+      scoreStat('Страница в каталоге', game ? 'Добавлена' : 'Ещё не добавлена', game ? 'профили и оценки привязаны к этой игре' : 'добавить может любой участник') +
+      '</div>'
+    if (internalRows.length > 1) {
+      html += '<div class="row wrap" style="gap:7px;margin-top:10px"><span class="tiny dim">Средние оценки по жанрам:</span>' +
+        internalRows.map((row) => '<span class="chip">' + U.esc(row.genre_id) + ' · ' + U.formatNumber(row.average_score) + ' (' + row.review_count + ')</span>').join('') + '</div>'
+    }
+    if (game) {
+      html += '<div class="row wrap" style="margin-top:12px">' +
+        (status.signedIn
+          ? '<button class="btn primary" data-route="#/review/' + steam.steamAppId + '">Оценить эту игру</button>'
+          : '<button class="btn primary" data-route="#/account">Войдите, чтобы оставить оценку</button>') +
+        '</div>'
+    }
+    if (sharedError) html += '<div class="tiny dim" style="margin:10px 0">Общие оценки временно недоступны: ' + U.esc(sharedError) + '</div>'
+    html += '<div class="two-col" style="margin-top:16px;align-items:start"><div class="card pad">' +
+      cardTitle('Оценки участников', 'Публичные отзывы людей, которые оценивали эту игру.')
+    if (!game) {
+      html += status.signedIn ? '<p class="small muted">Эта игра пока не добавлена в общий каталог.</p><button class="btn primary" id="add-shared-game" style="margin-top:12px">Добавить страницу игры</button>' : authNeeded()
+    } else if (!shared?.reviews?.length) {
+      html += '<div class="empty"><h3>Оценок пока нет</h3><p>Добавьте свою оценку — она появится на общей странице игры.</p></div>'
+    } else {
+      html += '<div class="community-reviews">' + shared.reviews.map((review) => reviewCard(review)).join('') + '</div>'
+    }
+    html += '</div><div class="card pad">' + cardTitle('Об игре', 'Информация из Steam Store') +
+      '<div class="small muted" style="line-height:1.7">' + U.esc((steam.developers || []).join(', ') || 'Разработчик не указан') +
+      '<br>' + U.esc((steam.publishers || []).join(', ') || 'Издатель не указан') +
+      '<br>' + U.esc((steam.platforms || []).join(' · ') || 'Платформы не указаны') + '</div>' +
+      (steam.metacritic?.url ? '<div style="margin-top:12px"><button class="btn sm ghost" data-external="' + U.attr(steam.metacritic.url) + '">Открыть Metacritic</button></div>' : '') +
+      (otherRatings.length ? '<div class="divider"></div><div class="small" style="font-weight:600;margin-bottom:8px">Другие оценки</div>' + otherRatings.map((rating) =>
+        '<div class="row" style="padding:5px 0"><span class="small muted">' + U.esc(rating.source === 'opencritic' ? 'OpenCritic' : rating.source) + '</span><span class="spacer"></span><b>' + U.formatNumber(rating.score) + ' / ' + U.formatNumber(rating.max_score) + '</b>' +
+        (rating.url ? '<button class="btn ghost sm" data-external="' + U.attr(rating.url) + '">Открыть</button>' : '') + '</div>').join('') : '') +
+      '<div class="divider"></div><p class="tiny dim">Оценка Metacritic показывается только если она доступна в данных Steam. Источники и дата обновления будут указаны отдельно.</p></div></div>'
+    return html
+  }
+
+  function scoreStat(label, value, sub, key) {
+    return '<div class="stat"' + (key ? ' data-stat="' + U.attr(key) + '"' : '') + '><div class="stat-label">' + U.esc(label) + '</div><div class="stat-value" data-stat-value style="font-size:20px;margin-top:5px">' + U.esc(value) + '</div><div class="stat-label" data-stat-sub>' + U.esc(sub) + '</div></div>'
+  }
+
+  function updateSteamReviewStat(view, reviews, fallbackCount) {
+    const card = U.$('[data-stat="steam-reviews"]', view)
+    if (!card) return
+    const value = U.$('[data-stat-value]', card)
+    const sub = U.$('[data-stat-sub]', card)
+    if (!value || !sub) return
+    if (reviews?.percentPositive != null) {
+      value.textContent = U.formatNumber(reviews.percentPositive) + '% положительных'
+      sub.textContent = U.formatNumber(reviews.total, 0) + ' отзывов'
+    } else if (fallbackCount) {
+      value.textContent = U.formatNumber(fallbackCount, 0) + ' отзывов'
+      sub.textContent = 'в Steam · доля рекомендаций недоступна'
+    } else {
+      value.textContent = 'Нет данных'
+      sub.textContent = 'Отзывы Steam сейчас недоступны'
+    }
+  }
+
+  function reviewCard(review) {
+    const profile = review.profile || {}
+    return '<article class="community-review"><div class="row"><span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
+      '<button class="text-link" data-route="#/person/' + U.attr(profile.handle || '') + '">' + U.esc(profile.display_name || profile.handle || 'Участник') + '</button>' +
+      '<span class="spacer"></span><b class="review-score" style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</b></div>' +
+      (review.review_title ? '<h4 style="margin-top:9px">' + U.esc(review.review_title) + '</h4>' : '') +
+      '<div class="tiny dim" style="margin-top:5px">Жанр: ' + U.esc(review.genre_id || 'не указан') + '</div>' +
+      (review.verdict ? '<p class="small muted" style="margin-top:5px;line-height:1.6">' + U.esc(review.verdict) + '</p>' : '') +
+      '<div class="tiny dim" style="margin-top:7px">Заполнено: ' + Math.round((review.coverage || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</div></article>'
+  }
+
+  function bindSteamGame(view, steam, steamReviews, status, shared) {
+    U.$('#open-steam', view)?.addEventListener('click', () => api.openExternal(steam.storeUrl))
+    U.$$('[data-external]', view).forEach((button) => button.addEventListener('click', () => api.openExternal(button.dataset.external)))
+    U.$('#add-shared-game', view)?.addEventListener('click', async (event) => {
+      const button = event.currentTarget
+      button.disabled = true
+      button.textContent = 'Добавляем…'
+      try {
+        await api.cloud.addSteamGame(steam.steamAppId)
+        U.toast('Страница игры добавлена в общий каталог', 'good')
+        renderSteamGame(view, steam.steamAppId)
+      } catch (err) {
+        U.toast(err.message || 'Не удалось добавить игру', 'bad')
+        button.disabled = false
+        button.textContent = 'Добавить страницу игры'
+      }
+    })
+  }
+
+  /* ---------- community profiles ---------- */
+
+  async function renderCommunity(view) {
+    const status = await getStatus()
+    if (location.hash !== '#/community') return
+    if (!status.configured) {
+      view.innerHTML = shell(head('Сообщество', 'Участники', 'Публичные профили и их оценки.') + '<div class="card pad">Общая база пока не подключена. <button class="btn sm primary" data-route="#/account">Настроить</button></div>')
+      return
+    }
+    view.innerHTML = shell(head('Сообщество', 'Участники', 'Ищите профили и смотрите публичные оценки.') +
+      '<div class="tools"><label class="search">' + U.icon('search', 15) + '<input id="people-search" type="text" maxlength="40" placeholder="Имя или адрес профиля" value="' + U.attr(profileSearch) + '"></label>' +
+      '<button class="btn" id="people-search-button">Найти</button></div><div id="people-list"><div class="card pad small muted">Загрузка участников…</div></div>')
+    const input = U.$('#people-search', view)
+    const run = async () => {
+      profileSearch = input.value.trim()
+      await listProfilesInto(view, profileSearch)
+    }
+    U.$('#people-search-button', view).addEventListener('click', run)
+    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') run() })
+    run()
+  }
+
+  async function listProfilesInto(view, query) {
+    const target = U.$('#people-list', view)
+    if (!target) return
+    target.innerHTML = '<div class="card pad small muted">Ищем…</div>'
+    try {
+      const profiles = await api.cloud.listProfiles(query)
+      if (!target.isConnected || location.hash !== '#/community') return
+      target.innerHTML = profiles.length ? '<div class="game-grid">' + profiles.map((profile) => profileCard(profile)).join('') + '</div>' :
+        '<div class="empty"><h3>Профили не найдены</h3><p>Пока нет открытых профилей с таким именем.</p></div>'
+    } catch (err) {
+      target.innerHTML = '<div class="empty"><h3>Не удалось загрузить профили</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
+    }
+  }
+
+  function profileCard(profile) {
+    return '<button class="card person-card" data-route="#/person/' + U.attr(profile.handle) + '">' +
+      '<span class="avatar-big">' + U.esc(profile.avatar || '🎮') + '</span><span class="person-card-info"><b>' + U.esc(profile.display_name) + '</b>' +
+      '<small>@' + U.esc(profile.handle) + '</small><span>' + U.esc(profile.bio || 'О себе пока не написано.') + '</span></span>' + U.icon('arrow', 16) + '</button>'
+  }
+
+  async function renderPerson(view, handle) {
+    view.innerHTML = shell('<div class="card pad">Загружаем профиль…</div>')
+    try {
+      const result = await api.cloud.publicProfile(handle)
+      if (!view.isConnected || location.hash !== '#/person/' + handle) return
+      if (!result) {
+        view.innerHTML = shell(head('Сообщество', 'Профиль не найден', 'Профиль может быть закрытым или адрес указан неверно.') + '<button class="btn" data-route="#/community">К участникам</button>')
+        return
+      }
+      const p = result.profile
+      let html = '<div class="row" style="margin-bottom:14px"><button class="btn ghost sm" data-route="#/community">' + U.icon('back', 14) + ' Участники</button></div>' +
+        '<div class="card profile-hero"><div class="avatar-big">' + U.esc(p.avatar || '🎮') + '</div><div class="grow"><h2>' + U.esc(p.display_name) + '</h2>' +
+        '<div class="tagline">@' + U.esc(p.handle) + '</div><p class="small muted" style="margin-top:8px">' + U.esc(p.bio || 'О себе пока не написано.') + '</p>' +
+        '</div><span class="chip good">Открытый профиль</span></div>' +
+        '<div class="subhead"><h3>Оценки игр</h3><div class="line"></div><span class="tiny dim">' + result.reviews.length + '</span></div>'
+      if (!result.reviews.length) html += '<div class="empty"><h3>Пока нет публичных оценок</h3><p>Когда владелец профиля опубликует оценку, она появится здесь.</p></div>'
+      else html += '<div class="game-grid">' + result.reviews.map((r) => personReviewCard(r)).join('') + '</div>'
+      view.innerHTML = shell(html)
+    } catch (err) {
+      view.innerHTML = shell(head('Сообщество', 'Не удалось загрузить профиль', err.message || String(err)) + '<button class="btn" data-route="#/community">К участникам</button>')
+    }
+  }
+
+  function personReviewCard(review) {
+    const game = review.game || {}
+    return '<button class="card person-review-card" data-route="#/steam/' + Number(game.steam_app_id || 0) + '">' +
+      (safeSteamImage(game.header_image) ? '<img src="' + U.attr(safeSteamImage(game.header_image)) + '" alt="" loading="lazy">' : '') +
+      '<span class="grow"><b>' + U.esc(game.title || 'Игра') + '</b><small>' + U.esc(review.review_title || review.genre_id || '') + '</small>' +
+      (review.verdict ? '<span>' + U.esc(review.verdict) + '</span>' : '') + '</span>' +
+      '<strong style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</strong></button>'
+  }
+
+  window.K.Social = {
+    renderAccount,
+    renderCatalog,
+    renderSteamGame,
+    renderCommunity,
+    renderPerson
+  }
+})()

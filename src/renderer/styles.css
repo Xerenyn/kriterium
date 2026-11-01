@@ -321,6 +321,11 @@ select:focus, input:focus, textarea:focus {
 select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--dim) 50%), linear-gradient(135deg, var(--dim) 50%, transparent 50%); background-position: calc(100% - 15px) 52%, calc(100% - 10px) 52%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 26px; }
 textarea { resize: vertical; min-height: 76px; line-height: 1.55; }
 input::placeholder, textarea::placeholder { color: #48556c; }
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-2) inset;
+  caret-color: var(--text);
+}
 
 .game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 14px; }
 .game-card {
@@ -344,6 +349,39 @@ input::placeholder, textarea::placeholder { color: #48556c; }
 .game-card-score { display: flex; align-items: baseline; gap: 3px; font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
 .game-card-score small { font-size: 10px; color: var(--dim); font-weight: 500; letter-spacing: 0; }
 .game-card-bottom { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; gap: 9px; }
+
+/* ---------- shared catalog and community ---------- */
+.steam-result {
+  width: 100%; min-height: 82px; display: flex; align-items: center; gap: 13px;
+  padding: 10px 13px; color: var(--text); text-align: left; cursor: pointer;
+}
+.steam-result:hover, .person-card:hover, .person-review-card:hover { border-color: #44413a; background: #191918; }
+.steam-result img { width: 116px; height: 54px; object-fit: cover; border-radius: 6px; background: #171717; flex: 0 0 auto; }
+.steam-placeholder { width: 116px; height: 54px; display: grid; place-items: center; border-radius: 6px; background: var(--panel-2); color: var(--dim); font-size: 10px; letter-spacing: .1em; }
+.steam-result-info, .person-card-info { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.steam-result-info b, .person-card-info b { font-size: 13px; }
+.steam-result-info small, .person-card-info small { font-size: 10.5px; color: var(--dim); }
+.steam-result-arrow { color: var(--dim); }
+.steam-hero { position: relative; min-height: 245px; overflow: hidden; display: flex; align-items: flex-end; border-radius: 18px; background: #151515; }
+.steam-hero-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .28; filter: saturate(.55); }
+.steam-hero-content { position: relative; width: 100%; padding: 27px; background: linear-gradient(0deg, rgba(9,9,10,.96), rgba(9,9,10,.72) 65%, rgba(9,9,10,.04)); }
+.steam-hero h1 { font-size: 29px; }
+.steam-hero p { margin-top: 7px; max-width: 760px; color: #c1beb7; font-size: 12.5px; line-height: 1.6; }
+.steam-hero .row { gap: 6px; }
+.person-card, .person-review-card { width: 100%; min-height: 106px; display: flex; align-items: center; gap: 13px; padding: 14px; color: var(--text); text-align: left; cursor: pointer; }
+.person-card .avatar-big { width: 56px; height: 56px; border-radius: 15px; font-size: 27px; }
+.person-card-info > span, .person-review-card .grow > span { color: var(--muted); font-size: 11px; line-height: 1.45; }
+.community-reviews { display: flex; flex-direction: column; }
+.community-review { padding: 13px 0; border-bottom: 1px solid var(--line-soft); }
+.community-review:last-child { border-bottom: 0; }
+.review-score { font-size: 18px; font-variant-numeric: tabular-nums; }
+.text-link { border: 0; background: transparent; padding: 0; color: var(--text); font-size: 12px; font-weight: 600; }
+.text-link:hover { color: var(--accent); text-decoration: underline; }
+.person-review-card { min-height: 85px; }
+.person-review-card img { width: 104px; height: 52px; object-fit: cover; border-radius: 6px; }
+.person-review-card .grow { display: flex; flex-direction: column; gap: 3px; }
+.person-review-card small { color: var(--dim); font-size: 10.5px; }
+.person-review-card strong { font-size: 18px; font-variant-numeric: tabular-nums; }
 .mini-bars { display: flex; gap: 4px; }
 .mini-bars span { height: 3px; border-radius: 2px; background: rgba(255,255,255,.08); flex: 1; overflow: hidden; position: relative; }
 .mini-bars span i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }

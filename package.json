@@ -9,6 +9,7 @@
   "scripts": {
     "start": "electron .",
     "seed": "node scripts/seed.js",
+    "test:cloud": "node --test scripts/test-cloud.js",
     "dist": "electron-builder --win portable",
     "dist:dir": "electron-builder --win dir"
   },
@@ -28,6 +29,8 @@
       "main.js",
       "preload.js",
       "src/**/*",
+      "supabase/**/*",
+      "README.md",
       "package.json"
     ],
     "asar": true,

@@ -17,7 +17,8 @@ window.K = window.K || {};
     collapsed: new Set(),
     dirty: false,
     saving: false,
-    draftKey: ''
+    draftKey: '',
+    communityGame: null
   }
 
   function blankGame() {
@@ -39,6 +40,16 @@ window.K = window.K || {};
       notes: '',
       custom: {}
     }
+  }
+
+  function catalogForGenre(genreId) {
+    if (!state.communityGame) return window.K.app.catalog(genreId)
+    const official = (window.K.app.cloudPatches || []).map((patch) => ({
+      id: patch.patch_id,
+      enabled: patch.is_enabled,
+      operations: patch.operations
+    }))
+    return S.buildCatalog(window.K.app.base, official, genreId)
   }
 
   function countRated(ratings) {
@@ -79,7 +90,36 @@ window.K = window.K || {};
     scheduleDraft()
   }
 
-  async function render(view, gameId) {
+  async function render(view, gameId, steamAppId) {
+    let communityGame = null
+    let steamDetails = null
+    if (steamAppId) {
+      const numericSteamId = Number(steamAppId)
+      view.innerHTML = '<div class="view-inner"><div class="card pad">Подготавливаем страницу оценки…</div></div>'
+      try {
+        const status = await api.cloud.status()
+        if (location.hash !== '#/review/' + numericSteamId) return
+        if (!status.signedIn) {
+          view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Войдите, чтобы оценить игру</h3><p>Общие оценки публикуются от вашего аккаунта и показываются на странице игры.</p><button class="btn primary" data-route="#/account">Войти или создать аккаунт</button></div></div>'
+          return
+        }
+        const [shared, details] = await Promise.all([
+          api.cloud.publicGame(numericSteamId),
+          api.cloud.steamDetails(numericSteamId)
+        ])
+        if (location.hash !== '#/review/' + numericSteamId) return
+        if (!shared?.game) {
+          view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Страница игры ещё не создана</h3><p>Добавьте игру в общий каталог, прежде чем оставлять оценку.</p><button class="btn" data-route="#/steam/' + numericSteamId + '">К странице игры</button></div></div>'
+          return
+        }
+        steamDetails = details
+        communityGame = { steamAppId: numericSteamId, gameId: shared.game.id, game: shared.game }
+      } catch (err) {
+        view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Не удалось открыть оценку</h3><p>' + U.esc(err.message || String(err)) + '</p><button class="btn" data-route="#/steam/' + numericSteamId + '">К странице игры</button></div></div>'
+        return
+      }
+    }
+
     const existing = gameId ? window.K.app.games.find((g) => g.id === gameId) : null
     if (gameId && !existing) {
       view.innerHTML = '<div class="view-inner">' + U.toast('Игра не найдена', 'bad') + '</div>'
@@ -87,12 +127,27 @@ window.K = window.K || {};
       return
     }
 
-    const baseGame = existing ? JSON.parse(JSON.stringify(existing)) : blankGame()
-    const baseRatings = existing ? JSON.parse(JSON.stringify(window.K.app.ratings[existing.id] || {})) : {}
+    const communityLocal = !existing && steamAppId
+      ? window.K.app.games.find((g) => Number(g.custom?._steamAppId) === Number(steamAppId))
+      : null
+    const sourceGame = existing || communityLocal
+    const baseGame = sourceGame ? JSON.parse(JSON.stringify(sourceGame)) : blankGame()
+    if (communityGame) {
+      baseGame.title = steamDetails.title
+      const year = String(steamDetails.releaseDate || '').match(/\b(19|20)\d{2}\b/)
+      baseGame.year = year ? Number(year[0]) : baseGame.year
+      baseGame.platforms = steamDetails.platforms || baseGame.platforms
+      baseGame.custom = Object.assign({}, baseGame.custom || {}, {
+        _communityGameId: communityGame.gameId,
+        _steamAppId: communityGame.steamAppId
+      })
+    }
+    const baseRatings = sourceGame ? JSON.parse(JSON.stringify(window.K.app.ratings[sourceGame.id] || {})) : {}
 
     state.game = baseGame
     state.ratings = baseRatings
-    state.draftKey = draftKeyFor(existing ? existing.id : null)
+    state.communityGame = communityGame
+    state.draftKey = draftKeyFor(sourceGame ? sourceGame.id : steamAppId ? 'steam-' + steamAppId : null)
     state.dirty = false
     state.activeTier = 'main'
     state.collapsed = new Set()
@@ -101,7 +156,7 @@ window.K = window.K || {};
     if (draft && draft.game) {
       const draftCount = countRated(draft.ratings)
       const baseCount = countRated(baseRatings)
-      const isNewer = !existing || draft.savedAt > existing.updatedAt
+      const isNewer = !sourceGame || draft.savedAt > sourceGame.updatedAt
       if (isNewer && (draftCount > baseCount || (draft.game.title && !baseGame.title))) {
         state.game = Object.assign(blankGame(), draft.game)
         state.ratings = draft.ratings || {}
@@ -118,7 +173,7 @@ window.K = window.K || {};
     if (!allGenres.some((genre) => genre.id === state.game.genre)) {
       state.game.genre = allGenres.length ? allGenres[0].id : ''
     }
-    state.catalog = window.K.app.catalog(state.game.genre)
+    state.catalog = catalogForGenre(state.game.genre)
 
     renderShell(view)
   }
@@ -132,7 +187,9 @@ window.K = window.K || {};
     let html = '<div class="view-inner">'
     html += '<div class="page-head"><div><div class="eyebrow">' + (g.id ? 'Редактирование' : 'Новая оценка') + '</div>' +
       '<h1 class="page-title">' + (g.id ? U.esc(g.title || 'Без названия') : 'Оценить игру') + '</h1>' +
-      '<p class="page-sub">Заполните данные об игре и выставьте оценки. Балл пересчитывается сразу, сравнение идёт внутри жанра.</p></div>' +
+      '<p class="page-sub">' + (state.communityGame
+        ? 'Оценка привязана к общей странице игры. После сохранения она появится в вашем профиле и среди оценок участников.'
+        : 'Заполните данные об игре и выставьте оценки. Балл пересчитывается сразу, сравнение идёт внутри жанра.') + '</p></div>' +
       '<div class="head-actions"><button class="btn ghost" data-action="cancel">Отмена</button></div></div>'
 
     html += '<div class="editor-layout"><div class="editor-main">'
@@ -141,7 +198,7 @@ window.K = window.K || {};
     html += '<div class="card pad"><div class="card-head" style="margin-bottom:12px"><div><div class="card-title">Игра</div>' +
       '<div class="card-sub">Жанр определяет, с какими играми сравнивается оценка</div></div></div>' +
       '<div class="form-grid">' +
-      field('Название', '<input type="text" data-field="title" value="' + U.attr(g.title) + '" placeholder="Например, Disco Elysium" autofocus>', 'span2') +
+      field('Название', '<input type="text" data-field="title" value="' + U.attr(g.title) + '" placeholder="Например, Disco Elysium"' + (state.communityGame ? ' readonly title="Название взято со страницы игры"' : ' autofocus') + '>', 'span2') +
       field('Жанр', '<select data-field="genre">' + genres.map((genre) => '<option value="' + U.attr(genre.id) + '"' + (g.genre === genre.id ? ' selected' : '') + '>' + U.esc(genre.name) + '</option>').join('') + '</select>', 'span2') +
       field('Год', '<input type="number" data-field="year" min="1950" max="2100" value="' + U.attr(g.year || '') + '" placeholder="2024">') +
       field('Статус', '<select data-field="status">' + statuses.map((s) => '<option value="' + U.attr(s.id) + '"' + (g.status === s.id ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>') +
@@ -175,7 +232,7 @@ window.K = window.K || {};
     /* панель балла */
     html += '<aside class="score-panel"><div class="card score-card" id="score-card"></div>' +
       '<div class="card score-actions" style="padding:12px;gap:8px">' +
-      '<button class="btn primary" data-editor-save>' + U.icon('save', 15) + ' Сохранить оценку</button>' +
+      '<button class="btn primary" data-editor-save>' + U.icon('save', 15) + (state.communityGame ? ' Сохранить и опубликовать' : ' Сохранить оценку') + '</button>' +
       '<button class="btn ghost" data-action="cancel">Отмена</button>' +
       '</div>' +
       '<div class="card formula-mini"><b>Как считается:</b> главные стороны игры дают 60 баллов, дополнительные — 25, личные впечатления — 15. Жанр влияет на важность категорий. Каждый критерий оценивается от 0 до 10; «н/п» исключает его из расчёта.</div>' +
@@ -472,7 +529,7 @@ window.K = window.K || {};
         }
         markDirty()
         if (key === 'genre') {
-          state.catalog = window.K.app.catalog(state.game.genre)
+          state.catalog = catalogForGenre(state.game.genre)
           const note = U.$('#genre-note')
           if (note) note.textContent = (state.catalog.genre && state.catalog.genre.note) || ''
           renderCriteria()
@@ -511,7 +568,8 @@ window.K = window.K || {};
       if (!ok) return
     }
     const id = state.game && state.game.id
-    window.K.app.navigate(id ? '#/game/' + id : '#/library')
+    if (state.communityGame) window.K.app.navigate('#/steam/' + state.communityGame.steamAppId)
+    else window.K.app.navigate(id ? '#/game/' + id : '#/library')
   }
 
   async function submit() {
@@ -539,21 +597,60 @@ window.K = window.K || {};
       else if (cell.v != null && Number.isFinite(Number(cell.v))) ratings[id] = { na: false, v: Number(cell.v) }
     }
 
+    const calculated = S.computeScore(state.catalog, ratings)
+    if (state.communityGame && calculated.rated === 0) {
+      U.toast('Выставьте хотя бы одну оценку перед публикацией', 'bad')
+      state.saving = false
+      if (btn) { btn.disabled = false; btn.innerHTML = U.icon('save', 15) + ' Сохранить и опубликовать' }
+      return
+    }
+
     try {
       const saved = await api.games.save(game, ratings)
-      localStorage.removeItem(state.draftKey)
+      state.game = saved
       window.K.app.ratings[saved.id] = ratings
       window.K.app.games = await api.games.list()
       window.K.app.invalidate()
       const navCount = U.$('#nav-count')
       if (navCount) navCount.textContent = window.K.app.games.length ? String(window.K.app.games.length) : ''
-      state.dirty = false
-      U.toast('Оценка сохранена', 'good')
-      window.K.app.navigate('#/game/' + saved.id)
+      if (state.communityGame) {
+        await api.cloud.saveReview({
+          gameId: state.communityGame.gameId,
+          genreId: game.genre,
+          score: calculated.total,
+          coverage: calculated.coverage,
+          scoringVersion: window.K.app.base.coreVersion,
+          officialPatchIds: (window.K.app.cloudPatches || []).filter((patch) => patch.is_enabled).map((patch) => patch.patch_id),
+          reviewTitle: '',
+          verdict: game.verdict,
+          pros: game.pros,
+          cons: game.cons,
+          criterionRatings: ratings,
+          isPublic: true
+        })
+        localStorage.removeItem(state.draftKey)
+        state.dirty = false
+        U.toast('Оценка опубликована на странице игры', 'good')
+        window.K.app.navigate('#/steam/' + state.communityGame.steamAppId)
+      } else {
+        localStorage.removeItem(state.draftKey)
+        state.dirty = false
+        U.toast('Оценка сохранена', 'good')
+        window.K.app.navigate('#/game/' + saved.id)
+      }
     } catch (err) {
-      U.toast(err && err.message ? err.message : 'Не удалось сохранить', 'bad')
+      if (state.communityGame && game.id) {
+        state.dirty = true
+        saveDraft()
+        U.toast('Оценка сохранена на компьютере, но не опубликована: ' + (err.message || err), 'bad')
+      } else {
+        U.toast(err && err.message ? err.message : 'Не удалось сохранить', 'bad')
+      }
       state.saving = false
-      if (btn) { btn.disabled = false; btn.innerHTML = U.icon('save', 15) + ' Сохранить оценку' }
+      if (btn) {
+        btn.disabled = false
+        btn.innerHTML = U.icon('save', 15) + (state.communityGame ? ' Повторить публикацию' : ' Сохранить оценку')
+      }
     }
   }
 

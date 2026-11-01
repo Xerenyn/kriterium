@@ -1,13 +1,15 @@
 'use strict'
 
-const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, safeStorage } = require('electron')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createStore } = require('./src/core/store')
+const { createCloud } = require('./src/core/cloud')
 
 const ROOT = __dirname
 let mainWindow = null
 let store = null
+let cloud = null
 let dataDir = null
 
 app.setName('kriterium')
@@ -71,6 +73,7 @@ function createWindow() {
 
   if (process.env.KRIT_SCREENSHOT || process.env.KRIT_SMOKE) {
     mainWindow.webContents.once('did-finish-load', () => {
+      const waitMs = Math.max(300, Math.min(20000, Number(process.env.KRIT_WAIT_MS) || 2200))
       setTimeout(async () => {
         try {
           if (process.env.KRIT_ROUTE) {
@@ -98,7 +101,7 @@ function createWindow() {
           }
         }
         app.exit(0)
-      }, 2200)
+      }, waitMs)
     })
   }
 
@@ -142,6 +145,35 @@ function registerIpc() {
 
   ipcMain.handle('meta:get', (_e, key, fallback) => store.getMeta(key, fallback))
   ipcMain.handle('meta:set', (_e, key, value) => store.setMeta(key, value))
+
+  ipcMain.handle('cloud:status', () => cloud.status())
+  ipcMain.handle('cloud:configure', (_e, input) => cloud.configure(input))
+  ipcMain.handle('cloud:signUp', (_e, input) => cloud.signUp(input))
+  ipcMain.handle('cloud:signIn', (_e, input) => cloud.signIn(input))
+  ipcMain.handle('cloud:signOut', () => cloud.signOut())
+  ipcMain.handle('cloud:myProfile', () => cloud.myProfile())
+  ipcMain.handle('cloud:isDeveloper', () => cloud.isDeveloper())
+  ipcMain.handle('cloud:updateMyProfile', (_e, input) => cloud.updateMyProfile(input))
+  ipcMain.handle('cloud:listProfiles', (_e, query) => cloud.listPublicProfiles(query))
+  ipcMain.handle('cloud:publicProfile', (_e, handle) => cloud.publicProfile(handle))
+  ipcMain.handle('cloud:steamSearch', (_e, query) => cloud.searchSteam(query))
+  ipcMain.handle('cloud:steamDetails', (_e, steamAppId) => cloud.steamDetails(steamAppId))
+  ipcMain.handle('cloud:steamReviews', (_e, steamAppId) => cloud.steamReviews(steamAppId))
+  ipcMain.handle('cloud:publicGameSearch', (_e, query) => cloud.publicGameSearch(query))
+  ipcMain.handle('cloud:publicGame', (_e, id) => cloud.publicGame(id))
+  ipcMain.handle('cloud:addSteamGame', (_e, steamAppId) => cloud.addSteamGame(steamAppId))
+  ipcMain.handle('cloud:saveReview', (_e, review) => cloud.saveReview(review))
+  ipcMain.handle('cloud:listAppPatches', () => cloud.listAppPatches())
+  ipcMain.handle('cloud:publishAppPatch', (_e, patch) => cloud.publishAppPatch(patch))
+  ipcMain.handle('cloud:toggleAppPatch', (_e, id, enabled) => cloud.toggleAppPatch(id, enabled))
+  ipcMain.handle('cloud:deleteAppPatch', (_e, id) => cloud.deleteAppPatch(id))
+  ipcMain.handle('cloud:setupSql', async () => fs.readFile(path.join(ROOT, 'supabase', 'migrations', '0001_shared_catalog.sql'), 'utf8'))
+  ipcMain.handle('cloud:bootstrapSql', async (_e, email) => {
+    const value = String(email || '').trim().toLowerCase()
+    if (!/^\S+@\S+\.\S+$/.test(value) || value.length > 254 || value.includes("'")) throw new Error('Укажите корректную электронную почту.')
+    const sql = await fs.readFile(path.join(ROOT, 'supabase', 'bootstrap-developer.sql'), 'utf8')
+    return sql.replace('REPLACE-WITH-OWNER-EMAIL@example.com', value)
+  })
 
   ipcMain.handle('data:export', async () => {
     const stamp = new Date().toISOString().slice(0, 10)
@@ -210,15 +242,22 @@ function registerIpc() {
   })
   ipcMain.handle('window:close', () => mainWindow?.close())
 
-  ipcMain.handle('shell:openExternal', (_e, url) => {
-    if (typeof url === 'string' && /^https?:\/\//.test(url)) return shell.openExternal(url)
-    return false
+  ipcMain.handle('shell:openExternal', (_e, value) => {
+    if (typeof value !== 'string') return false
+    try {
+      const url = new URL(value)
+      const host = url.hostname.toLowerCase()
+      const allowed = ['steampowered.com', 'steamcommunity.com', 'metacritic.com', 'opencritic.com']
+      if (url.protocol !== 'https:' || url.username || url.password || !allowed.some((domain) => host === domain || host.endsWith('.' + domain))) return false
+      return shell.openExternal(url.href)
+    } catch { return false }
   })
 }
 
 app.whenReady().then(() => {
   dataDir = process.env.KRIT_DATA_DIR || path.join(app.getPath('userData'), 'data')
   store = createStore(dataDir)
+  cloud = createCloud(path.join(app.getPath('userData'), 'cloud.json'), safeStorage, { isPackaged: app.isPackaged })
   registerIpc()
   createWindow()
 

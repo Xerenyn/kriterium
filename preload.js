@@ -37,6 +37,32 @@ contextBridge.exposeInMainWorld('krit', {
     set: (key, value) => invoke('meta:set', key, value)
   },
 
+  cloud: {
+    status: () => invoke('cloud:status'),
+    configure: (input) => invoke('cloud:configure', input),
+    signUp: (input) => invoke('cloud:signUp', input),
+    signIn: (input) => invoke('cloud:signIn', input),
+    signOut: () => invoke('cloud:signOut'),
+    myProfile: () => invoke('cloud:myProfile'),
+    isDeveloper: () => invoke('cloud:isDeveloper'),
+    updateMyProfile: (input) => invoke('cloud:updateMyProfile', input),
+    listProfiles: (query) => invoke('cloud:listProfiles', query),
+    publicProfile: (handle) => invoke('cloud:publicProfile', handle),
+    steamSearch: (query) => invoke('cloud:steamSearch', query),
+    steamDetails: (steamAppId) => invoke('cloud:steamDetails', steamAppId),
+    steamReviews: (steamAppId) => invoke('cloud:steamReviews', steamAppId),
+    publicGameSearch: (query) => invoke('cloud:publicGameSearch', query),
+    publicGame: (id) => invoke('cloud:publicGame', id),
+    addSteamGame: (steamAppId) => invoke('cloud:addSteamGame', steamAppId),
+    saveReview: (review) => invoke('cloud:saveReview', review),
+    listAppPatches: () => invoke('cloud:listAppPatches'),
+    publishAppPatch: (patch) => invoke('cloud:publishAppPatch', patch),
+    toggleAppPatch: (id, enabled) => invoke('cloud:toggleAppPatch', id, enabled),
+    deleteAppPatch: (id) => invoke('cloud:deleteAppPatch', id),
+    setupSql: () => invoke('cloud:setupSql'),
+    bootstrapSql: (email) => invoke('cloud:bootstrapSql', email)
+  },
+
   data: {
     export: () => invoke('data:export'),
     import: () => invoke('data:import'),
