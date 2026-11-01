@@ -7,5 +7,6 @@ release/
 *.db-shm
 *.db-wal
 backups/
+supabase/.temp/
 .DS_Store
 Thumbs.db

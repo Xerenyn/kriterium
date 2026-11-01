@@ -36,7 +36,8 @@ function createCloud(configPath, safeStorage, options = {}) {
     if (loaded) return
     loaded = true
     try {
-      const parsed = JSON.parse(await fs.readFile(configPath, 'utf8'))
+      const raw = await fs.readFile(configPath, 'utf8')
+      const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''))
       config.url = typeof parsed.url === 'string' ? parsed.url : ''
       config.anonKey = typeof parsed.anonKey === 'string' ? parsed.anonKey : ''
       config.encryptedSession = typeof parsed.encryptedSession === 'string' ? parsed.encryptedSession : ''

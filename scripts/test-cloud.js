@@ -39,6 +39,11 @@ test('cloud settings persist only the public project config and validate sign-up
   await assert.rejects(cloud.signUp({ email: 'not-an-email', password: 'long-enough-password' }), /электронной почты/)
   await assert.rejects(cloud.signUp({ email: 'owner@example.com', password: 'short' }), /10 символов/)
   await assert.rejects(cloud.signIn({ email: '', password: '' }), /электронную почту/)
+
+  const bomPath = path.join(dir, 'legacy-cloud.json')
+  fs.writeFileSync(bomPath, '\ufeff' + JSON.stringify({ url: 'https://krit-demo.supabase.co', anonKey: 'public_key_for_test', encryptedSession: '' }), 'utf8')
+  const legacyConfig = createCloud(bomPath, safeStorage, { isPackaged: true })
+  assert.equal((await legacyConfig.status()).configured, true)
 })
 
 test('developer bootstrap and application patches are server-locked', () => {
