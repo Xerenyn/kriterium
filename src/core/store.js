@@ -202,7 +202,7 @@ function createStore(dir) {
       if (!genre) throw new Error('Жанр обязателен')
 
       const t = now()
-      const existing = stmt.gameGet.get(game.id)
+      const existing = game.id ? stmt.gameGet.get(game.id) : null
       const id = game.id || uid()
       const values = [
         title,

@@ -8,9 +8,43 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win portable"
+    "seed": "node scripts/seed.js",
+    "dist": "electron-builder --win portable",
+    "dist:dir": "electron-builder --win dir"
   },
   "devDependencies": {
-    "electron": "^40.0.0"
+    "electron": "^40.0.0",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "ru.kriterium.app",
+    "productName": "Критериум",
+    "copyright": "Критериум",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Kriterium-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Kriterium-${version}.exe"
+    },
+    "compression": "maximum"
   }
 }

@@ -65,6 +65,42 @@ function createWindow() {
     }
   })
 
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level >= 2) console.log('[renderer]', message, '(' + sourceId + ':' + line + ')')
+  })
+
+  if (process.env.KRIT_SCREENSHOT) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(async () => {
+        try {
+          if (process.env.KRIT_SMOKE_OUT) await fs.writeFile(process.env.KRIT_SMOKE_OUT + '.started', new Date().toISOString(), 'utf8')
+          if (process.env.KRIT_ROUTE) {
+            await mainWindow.webContents.executeJavaScript('location.hash = ' + JSON.stringify(process.env.KRIT_ROUTE))
+            await new Promise((resolve) => setTimeout(resolve, 900))
+          }
+          if (process.env.KRIT_SMOKE) {
+            const code = await fs.readFile(process.env.KRIT_SMOKE, 'utf8')
+            const result = await mainWindow.webContents.executeJavaScript(code)
+            const text = JSON.stringify(result, null, 2)
+            if (process.env.KRIT_SMOKE_OUT) await fs.writeFile(process.env.KRIT_SMOKE_OUT, text, 'utf8')
+            console.log('SMOKE_RESULT ' + text)
+            app.exit(result && result.ok ? 0 : 1)
+            return
+          }
+          const image = await mainWindow.webContents.capturePage()
+          await fs.writeFile(process.env.KRIT_SCREENSHOT, image.toPNG())
+          console.log('screenshot saved:', process.env.KRIT_SCREENSHOT)
+        } catch (err) {
+          console.error('screenshot failed', err)
+          if (process.env.KRIT_SMOKE_OUT) {
+            try { await fs.writeFile(process.env.KRIT_SMOKE_OUT + '.error.txt', String((err && err.stack) || err), 'utf8') } catch { /* noop */ }
+          }
+        }
+        app.exit(0)
+      }, 2200)
+    })
+  }
+
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -102,6 +138,9 @@ function registerIpc() {
   ipcMain.handle('patches:save', (_e, patch) => store.savePatch(patch))
   ipcMain.handle('patches:delete', (_e, id) => store.deletePatch(id))
   ipcMain.handle('patches:toggle', (_e, id) => store.togglePatch(id))
+
+  ipcMain.handle('meta:get', (_e, key, fallback) => store.getMeta(key, fallback))
+  ipcMain.handle('meta:set', (_e, key, value) => store.setMeta(key, value))
 
   ipcMain.handle('data:export', async () => {
     const stamp = new Date().toISOString().slice(0, 10)
@@ -177,7 +216,7 @@ function registerIpc() {
 }
 
 app.whenReady().then(() => {
-  dataDir = path.join(app.getPath('userData'), 'data')
+  dataDir = process.env.KRIT_DATA_DIR || path.join(app.getPath('userData'), 'data')
   store = createStore(dataDir)
   registerIpc()
   createWindow()

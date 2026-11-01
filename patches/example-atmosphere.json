@@ -1,0 +1,38 @@
+{
+  "id": "example.atmosphere",
+  "name": "Пример: атмосфера",
+  "version": "1.0.0",
+  "author": "Критериум",
+  "description": "Добавляет два критерия и текстовое поле «Атмосфера в одном слове». Можно менять под себя и загружать через экран «Патчи».",
+  "operations": [
+    {
+      "op": "addCriterion",
+      "categoryId": "audio",
+      "criterion": {
+        "id": "custom.audio.afterglow",
+        "name": "Звуковой след",
+        "w": 1,
+        "hint": "Вспоминается ли музыка или звук игры после выхода из неё."
+      }
+    },
+    {
+      "op": "addCriterion",
+      "categoryId": "level",
+      "criterion": {
+        "id": "custom.level.detail",
+        "name": "Плотность деталей",
+        "w": 0.8,
+        "hint": "Насколько среда населена интерактивными и просто живыми деталями."
+      }
+    },
+    {
+      "op": "addField",
+      "field": {
+        "key": "atmosphere",
+        "label": "Атмосфера в одном слове",
+        "type": "text",
+        "placeholder": "например, «мокрая осень»"
+      }
+    }
+  ]
+}
