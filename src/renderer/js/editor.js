@@ -132,14 +132,14 @@ window.K = window.K || {};
     let html = '<div class="view-inner">'
     html += '<div class="page-head"><div><div class="eyebrow">' + (g.id ? 'Редактирование' : 'Новая оценка') + '</div>' +
       '<h1 class="page-title">' + (g.id ? U.esc(g.title || 'Без названия') : 'Оценить игру') + '</h1>' +
-      '<p class="page-sub">Сначала факты об игре, затем критерии. Балл считается в реальном времени и только внутри выбранного жанра.</p></div>' +
+      '<p class="page-sub">Заполните данные об игре и выставьте оценки. Балл пересчитывается сразу, сравнение идёт внутри жанра.</p></div>' +
       '<div class="head-actions"><button class="btn ghost" data-action="cancel">Отмена</button></div></div>'
 
     html += '<div class="editor-layout"><div class="editor-main">'
 
     /* карточка игры */
     html += '<div class="card pad"><div class="card-head" style="margin-bottom:12px"><div><div class="card-title">Игра</div>' +
-      '<div class="card-sub">Название и жанр определяют, с чем будет сравниваться оценка</div></div></div>' +
+      '<div class="card-sub">Жанр определяет, с какими играми сравнивается оценка</div></div></div>' +
       '<div class="form-grid">' +
       field('Название', '<input type="text" data-field="title" value="' + U.attr(g.title) + '" placeholder="Например, Disco Elysium" autofocus>', 'span2') +
       field('Жанр', '<select data-field="genre">' + genres.map((genre) => '<option value="' + U.attr(genre.id) + '"' + (g.genre === genre.id ? ' selected' : '') + '>' + U.esc(genre.name) + '</option>').join('') + '</select>', 'span2') +
@@ -160,8 +160,8 @@ window.K = window.K || {};
     html += '<div id="criteria-area"></div>'
 
     /* итоговый текст */
-    html += '<div class="card pad" style="margin-top:14px"><div class="card-head" style="margin-bottom:12px"><div><div class="card-title">Текстовая часть</div>' +
-      '<div class="card-sub">То, что не влезает в баллы</div></div></div>' +
+    html += '<div class="card pad" style="margin-top:14px"><div class="card-head" style="margin-bottom:12px"><div><div class="card-title">Вердикт и заметки</div>' +
+      '<div class="card-sub">Комментарии, которые не выразить баллом</div></div></div>' +
       '<div class="form-grid">' +
       field('Вердикт', '<textarea data-field="verdict" placeholder="Кому и зачем стоит играть — в двух предложениях">' + U.esc(g.verdict) + '</textarea>', 'span4') +
       field('Сильные стороны', '<textarea data-field="pros" placeholder="По одному пункту на строку">' + U.esc(g.pros) + '</textarea>', 'span2') +
@@ -178,7 +178,7 @@ window.K = window.K || {};
       '<button class="btn primary" data-editor-save>' + U.icon('save', 15) + ' Сохранить оценку</button>' +
       '<button class="btn ghost" data-action="cancel">Отмена</button>' +
       '</div>' +
-      '<div class="card formula-mini"><b>Как считается:</b> основные 60 · дополнительные 25 · субъективные 15. Внутри уровня веса категорий зависят от жанра, критерий оценивается 0–10, «н/п» исключает его.</div>' +
+      '<div class="card formula-mini"><b>Как считается:</b> главные стороны игры дают 60 баллов, дополнительные — 25, личные впечатления — 15. Жанр влияет на важность категорий. Каждый критерий оценивается от 0 до 10; «н/п» исключает его из расчёта.</div>' +
       '</aside></div>'
 
     html += '</div>'
@@ -409,7 +409,7 @@ window.K = window.K || {};
     if (bar) {
       const pct = applicable ? Math.round((rated / applicable) * 100) : 0
       bar.style.width = pct + '%'
-      bar.style.background = pct === 100 ? '#4bb3a1' : 'var(--accent)'
+      bar.style.background = pct === 100 ? '#8fae9a' : 'var(--accent)'
     }
     if (count) count.textContent = rated + '/' + applicable
     const jump = U.$('[data-jump="' + cssEscape(cat.id) + '"]')
@@ -448,7 +448,7 @@ window.K = window.K || {};
           '<div class="bar thin"><i style="width:' + pct + '%;background:' + U.scoreColor(pct) + '"></i></div></div>'
       }).join('') + '</div>' +
       '<div class="coverage"><div class="coverage-top"><span>Заполнено</span><span>' + coverage + '% · ' + score.rated + ' из ' + score.applicable + '</span></div>' +
-      '<div class="bar thin"><i style="width:' + coverage + '%;background:' + (coverage >= 80 ? '#4bb3a1' : coverage >= 50 ? '#d9c04a' : '#e08a3d') + '"></i></div>' +
+      '<div class="bar thin"><i style="width:' + coverage + '%;background:' + (coverage >= 80 ? '#8fae9a' : coverage >= 50 ? '#9c8e64' : '#b8886f') + '"></i></div>' +
       (score.rated === 0 ? '<div class="warn-note">Поставьте хотя бы несколько оценок — балл появится сразу. Критерии можно отмечать как «н/п».</div>'
         : coverage < 50 ? '<div class="warn-note">Покрытие ниже 50%: балл черновой. Незаполненные категории не учитываются, а их вес перераспределяется.</div>'
           : '') +

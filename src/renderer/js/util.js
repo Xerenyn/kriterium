@@ -147,12 +147,12 @@ window.K = window.K || {};
 
   function scoreColor(value) {
     const v = Number(value) || 0
-    if (v >= 85) return '#4bb3a1'
-    if (v >= 72) return '#7fb85a'
-    if (v >= 60) return '#a8bf52'
-    if (v >= 48) return '#d9c04a'
-    if (v >= 35) return '#e08a3d'
-    return '#e0533d'
+    if (v >= 85) return '#8fae9a'
+    if (v >= 72) return '#a3ae86'
+    if (v >= 60) return '#b8ad84'
+    if (v >= 48) return '#c2a37a'
+    if (v >= 35) return '#b8886f'
+    return '#a9675f'
   }
 
   function clamp(value, min, max) {

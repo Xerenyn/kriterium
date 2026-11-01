@@ -9,7 +9,7 @@ window.K = window.K || {};
   const api = window.krit
   const app = () => window.K.app
 
-  const ACCENTS = ['#6c8cff', '#54b8a4', '#d9c04a', '#e08a3d', '#e0533d', '#b07cff', '#ff7a9c', '#5aa9e6']
+  const ACCENTS = ['#d8d3c9', '#a8a29a', '#93a68f', '#b0826f', '#a89a72', '#8f8f96', '#a08d86', '#7f8b8f']
   const AVATARS = ['🎮', '🕹️', '👾', '🎯', '🧠', '🦊', '🐺', '🌙', '⚡', '🔥', '🧩', '🎲']
 
   function shell(html) {
@@ -76,7 +76,7 @@ window.K = window.K || {};
   }
 
   function tierName(id) {
-    return id === 'main' ? 'Основные' : id === 'extra' ? 'Дополнительные' : 'Субъективные'
+    return id === 'main' ? 'Основные' : id === 'extra' ? 'Дополнительные' : 'Личный опыт'
   }
 
   /* ---------- профиль ---------- */
@@ -89,7 +89,7 @@ window.K = window.K || {};
       if (item.score.grade) bands[item.score.grade.letter] = (bands[item.score.grade.letter] || 0) + 1
     }
 
-    let html = pageHead('Личный кабинет', 'Мой профиль', 'Аккаунт и все оценки хранятся локально в базе приложения — без облака и регистрации.',
+    let html = pageHead('Аккаунт', 'Мой профиль', 'Профиль и все оценки хранятся только на этом компьютере.',
       '<button class="btn ghost" data-action="edit-profile">' + U.icon('edit', 14) + ' Изменить</button>' +
       '<button class="btn primary" data-route="#/new">' + U.icon('plus', 14) + ' Оценить игру</button>')
 
@@ -112,7 +112,7 @@ window.K = window.K || {};
     html += '<div class="two-col">'
 
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Баллы по уровням</div>' +
-      '<div class="card-sub">Средний результат по всем оценкам, в пересчёте на 10</div></div></div>' +
+      '<div class="card-sub">Средний результат по всем оценкам (из 10)</div></div></div>' +
       (Object.keys(stats.tiers).length ? tierAveragesHtml(stats) : '<div class="small dim">Пока нет оценок.</div>') +
       '<div class="divider"></div><div class="row wrap" style="gap:6px">' +
       Object.entries(bands).filter(([_, n]) => n > 0).map(([letter, n]) => '<span class="chip">' + letter + ' · ' + n + '</span>').join('') +
@@ -267,7 +267,7 @@ window.K = window.K || {};
     const base = app().base
     const criteriaCount = base.categories.reduce((n, c) => n + c.criteria.length, 0)
 
-    let html = pageHead('Расширения', 'Патчи', 'Патч — это пакет изменений: новые критерии, жанры, поля и статусы. Ядро остаётся целым, а ваши правки можно отключить в любой момент.',
+    let html = pageHead('Дополнения', 'Патчи', 'Патчи добавляют критерии, жанры и поля. Основной набор остаётся неизменным, дополнения можно отключить.',
       '<button class="btn ghost" data-action="paste-patch">' + U.icon('code', 14) + ' Вставить JSON</button>' +
       '<button class="btn primary" data-action="import-patch">' + U.icon('plus', 14) + ' Загрузить патч</button>')
 
@@ -279,10 +279,10 @@ window.K = window.K || {};
       '<div class="spacer"></div>' +
       '<button class="btn sm ghost" data-action="example">Скачать пример патча</button></div>' +
       '<div class="divider"></div>' +
-      '<div class="small muted" style="line-height:1.65">Баллы пересчитываются на лету: отключение патча сразу меняет веса и итог, но не удаляет выставленные оценки. Если вернуть критерий с тем же id, его баллы восстановятся.</div>' +
+      '<div class="small muted" style="line-height:1.65">Отключение патча сразу меняет веса и итог, но не удаляет выставленные оценки. Если вернуть критерий с тем же id, баллы восстановятся.</div>' +
       '</div>'
 
-    html += '<div class="subhead" style="margin-top:8px"><h3>Установленные</h3><div class="line"></div><span class="tiny dim">' + patches.length + '</span></div>'
+    html += '<div class="subhead" style="margin-top:8px"><h3>Установленные патчи</h3><div class="line"></div><span class="tiny dim">' + patches.length + '</span></div>'
 
     if (!patches.length) {
       html += '<div class="empty"><h3>Патчей пока нет</h3><p>Добавьте собственный критерий, жанр или поле — приложение сохранит это как патч «Мои дополнения».</p>' +
@@ -293,12 +293,12 @@ window.K = window.K || {};
       }
     }
 
-    html += '<div class="subhead"><h3>Свои расширения</h3><div class="line"></div></div>'
+    html += '<div class="subhead"><h3>Свои дополнения</h3><div class="line"></div></div>'
     html += '<div class="card pad"><div class="row wrap" style="gap:8px">' +
       '<button class="btn" data-action="new-criterion">' + U.icon('plus', 14) + ' Новый критерий</button>' +
       '<button class="btn" data-action="new-genre">' + U.icon('plus', 14) + ' Новый жанр</button>' +
       '<button class="btn" data-action="new-field">' + U.icon('plus', 14) + ' Новое поле</button>' +
-      '</div><div class="tiny dim" style="margin-top:10px">Всё созданное сохраняется в патч <b>user.extensions</b> и применяется автоматически. Формат совместим с импортом.</div></div>'
+      '</div><div class="tiny dim" style="margin-top:10px">Всё созданное попадает в патч <b>user.extensions</b> и применяется сразу.</div></div>'
 
     html += '<div class="subhead"><h3>Как устроен патч</h3><div class="line"></div></div>'
     html += '<div class="card pad"><div class="small muted" style="line-height:1.65;margin-bottom:12px">JSON-объект с массивом операций. Поддерживаются: addCriterion, updateCriterion, removeCriterion, addCategory, updateCategory, removeCategory, addGenre, updateGenre, addField, addStatus.</div>' +
@@ -576,7 +576,7 @@ window.K = window.K || {};
     const catalog = app().catalog(null)
     const criteriaCount = catalog.categories.reduce((n, c) => n + c.criteria.length, 0)
 
-    let html = pageHead('Приложение', 'Настройки', 'Внешний вид, данные и сведения о локальной базе.')
+    let html = pageHead('Приложение', 'Настройки', 'Оформление, данные и информация о приложении.')
 
     html += '<div class="two-col"><div style="display:flex;flex-direction:column;gap:14px">'
 
@@ -604,14 +604,14 @@ window.K = window.K || {};
 
     html += '</div><div style="display:flex;flex-direction:column;gap:14px">'
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Система оценки</div><div class="card-sub">Текущая конфигурация ядра</div></div></div>' +
+    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Система оценки</div><div class="card-sub">Текущий набор критериев</div></div></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Критериев</span><span class="spacer"></span><span class="mono">' + criteriaCount + '</span></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Категорий</span><span class="spacer"></span><span class="mono">' + catalog.categories.length + '</span></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Жанров</span><span class="spacer"></span><span class="mono">' + catalog.genres.length + '</span></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Патчей</span><span class="spacer"></span><span class="mono">' + app().patches.length + '</span></div>' +
       '<div class="divider"></div>' +
       '<div class="formula-strip"><span></span><span></span><span></span></div>' +
-      '<div class="formula-legend" style="margin-top:8px"><span><i class="dot" style="background:var(--accent)"></i>60</span><span><i class="dot" style="background:#54b8a4"></i>25</span><span><i class="dot" style="background:#d9c04a"></i>15</span></div>' +
+      '<div class="formula-legend" style="margin-top:8px"><span><i class="dot" style="background:var(--accent)"></i>60</span><span><i class="dot" style="background:#7c8f80"></i>25</span><span><i class="dot" style="background:#9c8e64"></i>15</span></div>' +
       '</div>'
 
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">О приложении</div><div class="card-sub">Критериум</div></div></div>' +

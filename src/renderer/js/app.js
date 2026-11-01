@@ -13,7 +13,7 @@ window.K = window.K || {};
     info: null,
     base: null,
     patches: [],
-    profile: { nickname: 'Игрок', tagline: '', avatar: '🎮', accent: '#6c8cff' },
+    profile: { nickname: 'Игрок', tagline: '', avatar: '🎮', accent: '#d8d3c9' },
     games: [],
     ratings: {},
     settings: { showHints: true, step: 0.5 },
@@ -185,8 +185,8 @@ window.K = window.K || {};
 
     html += '<div class="hero"><div>' +
       '<div class="eyebrow">' + U.esc(greeting) + ', ' + U.esc(app.profile.nickname) + '</div>' +
-      '<h2>Оценка, которую можно защитить</h2>' +
-      '<p>126 критериев, жанровые профили и честная поправка на личный опыт. Основные аспекты дают 60 баллов, дополнительные — 25, субъективные — 15.</p>' +
+      '<h2>Разбор игры по критериям</h2>' +
+      '<p>126 критериев в 19 категориях. Итог — до 100 баллов: 60 за главные стороны игры, 25 за дополнительные и 15 за ваши впечатления.</p>' +
       '<div style="margin-top:16px"><button class="btn primary" data-route="#/new">' + U.icon('plus', 15) + ' Оценить игру</button>' +
       '<button class="btn ghost" style="margin-left:8px" data-action="formula">Как считается балл</button></div>' +
       '</div><div class="hero-actions">' +
@@ -216,24 +216,24 @@ window.K = window.K || {};
     }
     html += '</div>'
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Формула</div>' +
-      '<div class="card-sub">Вес уровней в итоговом балле</div></div></div>' +
+    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Из чего складывается оценка</div>' +
+      '<div class="card-sub">Доля каждого уровня в итоговом балле</div></div></div>' +
       '<div class="formula-strip"><span></span><span></span><span></span></div>' +
       '<div class="formula-legend">' +
       '<span><i class="dot" style="background:var(--accent)"></i>Основные · 60</span>' +
-      '<span><i class="dot" style="background:#54b8a4"></i>Дополнительные · 25</span>' +
-      '<span><i class="dot" style="background:#d9c04a"></i>Субъективные · 15</span>' +
+      '<span><i class="dot" style="background:#7c8f80"></i>Дополнительные · 25</span>' +
+      '<span><i class="dot" style="background:#9c8e64"></i>Личные впечатления · 15</span>' +
       '</div>' +
       '<div class="divider"></div>' +
-      '<div class="small muted" style="line-height:1.6">Внутри уровней вес перераспределяется жанровым профилем. Например, для визуальной новеллы сюжет весит в 2 раза больше, а для автосима — почти не учитывается.</div>' +
-      '<div style="margin-top:13px"><button class="btn sm ghost" data-action="formula">Разобрать формулу</button></div>' +
+      '<div class="small muted" style="line-height:1.6">Жанр влияет на важность отдельных категорий. Например, в визуальной новелле сюжет учитывается сильнее, а в автосиме — слабее.</div>' +
+      '<div style="margin-top:13px"><button class="btn sm ghost" data-action="formula">Подробнее о формуле</button></div>' +
       '</div>'
 
     html += '</div>'
 
     if (genres.length) {
       html += '<div class="card pad" style="margin-top:16px"><div class="card-head"><div><div class="card-title">Жанры</div>' +
-        '<div class="card-sub">Средний балл внутри жанра — сравнение только с подобным</div></div></div>'
+        '<div class="card-sub">Средний балл по жанрам: сравнение только с похожими играми</div></div></div>'
       for (const g of genres) {
         html += '<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line-soft)">' +
           '<div style="width:190px" class="ellipsis small">' + U.esc(app.genreName(g.id)) + '</div>' +
@@ -246,7 +246,7 @@ window.K = window.K || {};
     }
 
     if (top.length) {
-      html += '<div class="subhead"><h3>Мой топ</h3><div class="line"></div><span class="tiny dim">по текущим оценкам</span></div>'
+      html += '<div class="subhead"><h3>Мой топ</h3><div class="line"></div><span class="tiny dim">по вашим оценкам</span></div>'
       html += '<div class="game-grid">'
       for (const item of top) html += gameCard(item.game, item.score)
       html += '</div>'
@@ -294,20 +294,20 @@ window.K = window.K || {};
 
   function openFormula() {
     const html =
-      '<div class="small" style="line-height:1.7;color:#c6d0e1">' +
-      '<p>Итог всегда 100 баллов, но вклад уровней разный:</p>' +
+      '<div class="small" style="line-height:1.7;color:#c9c6bf">' +
+      '<p>Итог — до 100 баллов. Уровни дают разное количество баллов:</p>' +
       '<div class="formula-strip" style="margin:14px 0 8px"><span></span><span></span><span></span></div>' +
       '<div class="formula-legend" style="margin-bottom:16px">' +
       '<span><i class="dot" style="background:var(--accent)"></i>Основные — 60</span>' +
-      '<span><i class="dot" style="background:#54b8a4"></i>Дополнительные — 25</span>' +
-      '<span><i class="dot" style="background:#d9c04a"></i>Субъективные — 15</span></div>' +
-      '<p><b>1. Жанровый профиль.</b> У каждой категории есть множитель жанра. Для RPG история весит ×1,45, для автосима — ×0,05. После умножения веса категорий внутри уровня нормализуются так, чтобы уровень всё равно давал свои 60 / 25 / 15 баллов.</p>' +
+      '<span><i class="dot" style="background:#7c8f80"></i>Дополнительные — 25</span>' +
+      '<span><i class="dot" style="background:#9c8e64"></i>Личные впечатления — 15</span></div>' +
+      '<p><b>1. Учитывается жанр.</b> Важность категорий зависит от жанра. Например, в RPG больше внимания уделяется сюжету, а в автосимуляторе — управлению и технике. Доли трёх уровней при этом остаются прежними: 60, 25 и 15 баллов.</p>' +
       '<p style="margin-top:10px"><b>2. Оценка критерия.</b> Каждый критерий оценивается от 0 до 10. Можно поставить «н/п», если аспект неприменим (например, сетевая игра в одиночном проекте).</p>' +
-      '<p style="margin-top:10px"><b>3. Категория.</b> Взвешенное среднее критериев: Σ(вес × балл) / Σ(вес). Категория получает долю баллов своего уровня пропорционально жанровому весу.</p>' +
-      '<p style="margin-top:10px"><b>4. Уровень.</b> Сумма баллов категорий, у которых есть оценки. Если категория не заполнена, её баллы перераспределяются между заполненными — поэтому покрытие показывается отдельно.</p>' +
-      '<p style="margin-top:10px"><b>5. Покрытие.</b> Процент заполненных критериев. При покрытии ниже 50% балл считается черновым: он честно показывает, что оценка неполная.</p>' +
+      '<p style="margin-top:10px"><b>3. Считается категория.</b> Оценки критериев объединяются с учётом их веса. Затем баллы категории распределяются внутри её уровня.</p>' +
+      '<p style="margin-top:10px"><b>4. Если оценка не заполнена.</b> Баллы пустых категорий распределяются между теми, где уже есть оценки. Поэтому приложение отдельно показывает процент заполнения.</p>' +
+      '<p style="margin-top:10px"><b>5. Заполнение.</b> Это доля критериев, которым вы выставили оценку. Если заполнено меньше половины, итог помечается как предварительный.</p>' +
       '<div class="divider"></div>' +
-      '<p class="tiny dim">Формула: итог = Σ уровни [ баллы_уровня × Σ(вес_категории × балл_категории/10) / Σ вес_категорий ]. Затем округление до 0,1.</p>' +
+      '<p class="tiny dim">Баллы каждого уровня складываются. Итог округляется до десятых.</p>' +
       '</div>'
     U.openModal({ title: 'Как считается итоговый балл', body: html, width: 640 })
   }
@@ -321,7 +321,7 @@ window.K = window.K || {};
     const genres = catalog.genres.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
     const statuses = catalog.statuses
 
-    let html = pageHead('Коллекция', 'Мои оценки', 'Одна игра — один балл. Сравнение имеет смысл только внутри жанра.', '<button class="btn primary" data-route="#/new">' + U.icon('plus', 15) + ' Новая оценка</button>')
+    let html = pageHead('Коллекция', 'Мои оценки', 'Все оценённые игры. Сравнивать имеет смысл только игры одного жанра.', '<button class="btn primary" data-route="#/new">' + U.icon('plus', 15) + ' Новая оценка</button>')
 
     html += '<div class="tools">' +
       '<label class="search">' + U.icon('search', 15) + '<input id="lib-search" type="text" placeholder="Найти игру…" value="' + U.attr(libraryState.search) + '"></label>' +
@@ -442,32 +442,32 @@ window.K = window.K || {};
     const showAvg = genreScores.length >= 2
 
     html += '<div class="two-col" style="align-items:start">'
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Профиль по основным аспектам</div>' +
-      '<div class="card-sub">' + (showAvg ? 'Сравнение со средним по жанру «' + U.esc(genre ? genre.name : '') + '»' : 'Радар основных категорий') + '</div></div></div>' +
+    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Основные аспекты</div>' +
+      '<div class="card-sub">' + (showAvg ? 'Сравнение со средним по жанру «' + U.esc(genre ? genre.name : '') + '»' : 'Оценки по основным категориям') + '</div></div></div>' +
       '<div class="radar-wrap">' + C.radar({
         axes: mainCats.map((c) => ({ label: shortLabel(c) })),
         series: [
-          { values: mainCats.map((c) => c.score || 0), color: '#6c8cff', fillOpacity: 0.18 }
-        ].concat(showAvg ? [{ values: avgSeries.map((v) => v || 0), color: '#d9c04a', fillOpacity: 0.06, dots: false }] : []),
+          { values: mainCats.map((c) => c.score || 0), color: '#d8d3c9', fillOpacity: 0.18 }
+        ].concat(showAvg ? [{ values: avgSeries.map((v) => v || 0), color: '#9c8e64', fillOpacity: 0.06, dots: false }] : []),
         size: 330
       }) + '</div>' +
-      '<div class="radar-legend"><span><i class="dot" style="background:#6c8cff"></i>Эта игра</span>' +
-      (showAvg ? '<span><i class="dot" style="background:#d9c04a"></i>Среднее по жанру</span>' : '') + '</div>' +
-      (multiplierNote.length ? '<div class="divider"></div><div class="tiny dim" style="line-height:1.6">Жанровые акценты: ' +
+      '<div class="radar-legend"><span><i class="dot" style="background:#d8d3c9"></i>Эта игра</span>' +
+      (showAvg ? '<span><i class="dot" style="background:#9c8e64"></i>Среднее по жанру</span>' : '') + '</div>' +
+      (multiplierNote.length ? '<div class="divider"></div><div class="tiny dim" style="line-height:1.6">Жанровые коэффициенты: ' +
         multiplierNote.map((c) => U.esc(shortLabel(c)) + ' ×' + U.formatNumber(c.multiplier, 2)).join(', ') + '</div>' : '') +
       '</div>'
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Что повлияло</div>' +
-      '<div class="card-sub">Самая сильная и слабая категории</div></div></div>' +
-      highlightLine('Сильнее всего', bestCategory(score)) +
-      highlightLine('Слабее всего', worstCategory(score)) +
+    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Лучшая и худшая категории</div>' +
+      '<div class="card-sub">Крайние значения среди заполненных</div></div></div>' +
+      highlightLine('Лучшая категория', bestCategory(score)) +
+      highlightLine('Худшая категория', worstCategory(score)) +
       '<div class="divider"></div>' +
       '<div class="small muted" style="line-height:1.65">Покрытие: <b style="color:var(--text)">' + Math.round((score.coverage || 0) * 100) + '%</b> (' + score.rated + ' из ' + score.applicable + '). ' +
       (score.coverage < 0.5 ? 'Балл черновой — заполните больше критериев.' : 'Оценка достаточно полная.') + '</div>' +
       '</div>'
     html += '</div>'
 
-    html += '<div class="subhead"><h3>Разбор по категориям</h3><div class="line"></div><span class="tiny dim">вклад в 100 баллов</span></div>'
+    html += '<div class="subhead"><h3>Категории</h3><div class="line"></div><span class="tiny dim">вклад в итоговый балл</span></div>'
     html += '<div class="card" style="padding:14px 16px 6px"><table class="cat-table"><thead><tr>' +
       '<th>Категория</th><th class="num">Вес</th><th class="num">Балл</th><th>Шкала</th><th class="num">Вклад</th></tr></thead><tbody>'
 
@@ -532,7 +532,7 @@ window.K = window.K || {};
     visual: 'Визуал', audio: 'Звук', tech: 'Техника', ux: 'Интерфейс',
     content: 'Контент', social: 'Онлайн', support: 'Поддержка', value: 'Монетизация',
     original: 'Оригинальность', engage: 'Вовлечённость', session: 'Сессии',
-    emotion: 'Эмоции', memory: 'Ценность', time: 'Время', fit: 'Фиты'
+    emotion: 'Эмоции', memory: 'Ценность', time: 'Время', fit: 'Сложность и темп'
   }
 
   function shortLabel(cat) {

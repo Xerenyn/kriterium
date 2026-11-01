@@ -51,7 +51,7 @@ window.K = window.K || {};
       return [center + Math.cos(angle(i)) * radius * ratio, center + Math.sin(angle(i)) * radius * ratio]
     }
 
-    let svg = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="100%" height="auto" style="max-width:' + size + 'px">'
+    let svg = '<svg viewBox="0 0 ' + size + ' ' + size + '" width="100%" style="max-width:' + size + 'px;height:auto;display:block">'
 
     for (let level = 1; level <= 4; level += 1) {
       const ratio = level / 4
@@ -74,11 +74,11 @@ window.K = window.K || {};
         return p[0].toFixed(1) + ',' + p[1].toFixed(1)
       }).join(' ')
       if (!pts) continue
-      svg += '<polygon points="' + pts + '" fill="' + (s.color || '#6c8cff') + '" fill-opacity="' + (s.fillOpacity == null ? 0.16 : s.fillOpacity) + '" stroke="' + (s.color || '#6c8cff') + '" stroke-width="1.8" stroke-linejoin="round"/>'
+      svg += '<polygon points="' + pts + '" fill="' + (s.color || '#d8d3c9') + '" fill-opacity="' + (s.fillOpacity == null ? 0.16 : s.fillOpacity) + '" stroke="' + (s.color || '#d8d3c9') + '" stroke-width="1.8" stroke-linejoin="round"/>'
       if (s.dots !== false) {
         ;(s.values || []).forEach((v, i) => {
           const p = point(i, v)
-          svg += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.2" fill="' + (s.color || '#6c8cff') + '"/>'
+          svg += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.2" fill="' + (s.color || '#d8d3c9') + '"/>'
         })
       }
     }

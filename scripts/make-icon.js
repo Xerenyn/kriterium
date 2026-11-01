@@ -14,9 +14,9 @@ const zlib = require('node:zlib')
 const SIZE = 256
 const SS = 3 // суперсэмплинг для сглаживания
 
-const BG = [17, 21, 31]          // #11151f
-const ACCENT = [108, 140, 255]   // #6c8cff
-const ACCENT_SOFT = [78, 102, 196]
+const BG = [17, 17, 18]          // #111112
+const ACCENT = [216, 211, 201]  // #d8d3c9
+const ACCENT_SOFT = [136, 132, 124]
 
 /* ---------- геометрия ---------- */
 

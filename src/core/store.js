@@ -27,7 +27,7 @@ function migrate(db) {
       nickname TEXT NOT NULL DEFAULT 'Игрок',
       tagline TEXT NOT NULL DEFAULT '',
       avatar TEXT NOT NULL DEFAULT '🎮',
-      accent TEXT NOT NULL DEFAULT '#6c8cff',
+      accent TEXT NOT NULL DEFAULT '#d8d3c9',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -78,7 +78,7 @@ function migrate(db) {
   if (!count || count.n === 0) {
     const t = now()
     db.prepare('INSERT INTO profile (id, nickname, tagline, avatar, accent, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?)')
-      .run('Игрок', 'Личный профиль оценок', '🎮', '#6c8cff', t, t)
+      .run('Игрок', 'Личный профиль оценок', '🎮', '#d8d3c9', t, t)
   }
 
   db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING')
@@ -164,11 +164,13 @@ function createStore(dir) {
 
     getProfile() {
       const row = stmt.profileGet.get()
+      // Раньше акцент по умолчанию был синим — переносим такие профили на строгий.
+      const accent = String(row.accent).toLowerCase() === '#6c8cff' ? '#d8d3c9' : row.accent
       return {
         nickname: row.nickname,
         tagline: row.tagline,
         avatar: row.avatar,
-        accent: row.accent,
+        accent,
         createdAt: row.created_at,
         updatedAt: row.updated_at
       }
@@ -380,7 +382,7 @@ function createStore(dir) {
       db.exec('BEGIN')
       try {
         db.exec('DELETE FROM ratings; DELETE FROM games; DELETE FROM patches; DELETE FROM meta;')
-        db.exec("UPDATE profile SET nickname = 'Игрок', tagline = 'Личный профиль оценок', avatar = '🎮', accent = '#6c8cff'")
+        db.exec("UPDATE profile SET nickname = 'Игрок', tagline = 'Личный профиль оценок', avatar = '🎮', accent = '#d8d3c9'")
         db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('schema_version', JSON.stringify(3))
         db.exec('COMMIT')
       } catch (err) {

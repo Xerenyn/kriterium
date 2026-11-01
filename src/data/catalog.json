@@ -9,11 +9,11 @@
     "max": 10,
     "step": 0.5,
     "labels": [
-      { "upTo": 2, "label": "Провал", "color": "#e0533d" },
-      { "upTo": 4, "label": "Слабо", "color": "#e08a3d" },
-      { "upTo": 6, "label": "Средне", "color": "#d9c04a" },
-      { "upTo": 8, "label": "Хорошо", "color": "#7fb85a" },
-      { "upTo": 10, "label": "Отлично", "color": "#4bb3a1" }
+      { "upTo": 2, "label": "Провал", "color": "#a9675f" },
+      { "upTo": 4, "label": "Слабо", "color": "#b8886f" },
+      { "upTo": 6, "label": "Средне", "color": "#9c8e64" },
+      { "upTo": 8, "label": "Хорошо", "color": "#a3ae86" },
+      { "upTo": 10, "label": "Отлично", "color": "#8fae9a" }
     ]
   },
   "tiers": [
@@ -21,22 +21,22 @@
       "id": "main",
       "name": "Основные",
       "points": 60,
-      "tagline": "Объективная основа: то, что можно проверить и обосновать",
-      "description": "Ядро оценки. Эти критерии описывают игру как произведение и как систему. Именно они дают наибольший вклад в итоговый балл — 60 из 100."
+      "tagline": "Главные стороны игры: управление, правила, уровни, сюжет, звук и техника",
+      "description": "Здесь оцениваются основные части игры. Этот раздел даёт 60 баллов из 100."
     },
     {
       "id": "extra",
       "name": "Дополнительные",
       "points": 25,
-      "tagline": "Контекст: обвязка, поддержка, условия существования игры",
-      "description": "Важные, но не определяющие параметры: удобство, объём, монетизация, поддержка, оригинальность. Дают 25 из 100."
+      "tagline": "Удобство, количество контента, поддержка и цена",
+      "description": "Эти оценки дополняют разбор игры и дают 25 баллов из 100."
     },
     {
       "id": "subjective",
-      "name": "Субъективные",
+      "name": "Личный опыт",
       "points": 15,
-      "tagline": "Личный опыт: вовлечённость, эмоции, уважение к времени",
-      "description": "Честная поправка на человека. Эти критерии не претендуют на объективность, но именно они отвечают на вопрос «а мне-то как?». Дают 15 из 100 — ощутимо меньше основных."
+      "tagline": "Ваши впечатления: интересно ли играть, подходят ли сложность и темп",
+      "description": "Здесь учитывается личный опыт: эмоции, интерес и то, насколько игра подходит именно вам. Раздел даёт 15 баллов из 100."
     }
   ],
   "categories": [
@@ -903,7 +903,7 @@
         },
         {
           "id": "memory.relevance",
-          "name": "Личная релевантность",
+      "name": "Насколько игра близка мне",
           "w": 2.5,
           "hint": "Попала ли игра в мой момент жизни, опыт, интересы."
         },
@@ -951,13 +951,13 @@
     {
       "id": "fit",
       "tier": "subjective",
-      "name": "Личный челлендж-фит",
+      "name": "Сложность и темп игры",
       "w": 1,
-      "short": "Подошла ли игра именно мне по сложности и настроению",
+      "short": "Насколько сложность, управление и темп подходят лично мне",
       "criteria": [
         {
           "id": "fit.difficulty",
-          "name": "Попадание в сложность",
+          "name": "Подходящая сложность",
           "w": 3.0,
           "hint": "Не слишком легко и не слишком тяжело лично для меня; есть ли честный выбор сложности."
         },
@@ -975,7 +975,7 @@
         },
         {
           "id": "fit.timebudget",
-          "name": "Бюджет времени",
+          "name": "Подходит ли по времени",
           "w": 2.0,
           "hint": "Вписывается ли игра в мою жизнь: можно ли играть по 40 минут или нужен марафон."
         }
@@ -1009,10 +1009,10 @@
     { "id": "management", "name": "Менеджмент / сим", "note": "Глубина систем и интерфейс", "profile": { "systems": 1.4, "core": 1.1, "content": 1.1, "visual": 1.0, "audio": 0.95, "tech": 1.0, "narrative": 0.5, "level": 0.9, "ux": 1.05, "social": 0.4, "support": 1.0, "value": 0.95, "original": 0.85 } },
     { "id": "sandbox", "name": "Песочница", "note": "Свобода, инструменты и сообщество", "profile": { "core": 1.15, "systems": 1.25, "content": 1.3, "original": 1.1, "visual": 1.0, "audio": 1.0, "tech": 1.0, "narrative": 0.5, "level": 1.0, "ux": 1.05, "social": 1.1, "support": 1.1, "value": 0.95 } },
     { "id": "visual_novel", "name": "Визуальная новелла", "note": "Текст, персонажи и режиссура", "profile": { "narrative": 2.0, "audio": 1.25, "visual": 1.1, "core": 0.45, "systems": 0.35, "level": 0.25, "tech": 0.8, "ux": 0.95, "content": 1.0, "social": 0.15, "support": 0.7, "value": 0.9, "original": 0.95 } },
-    { "id": "walking_sim", "name": "Walking sim", "note": "Атмосфера, среда и нарратив", "profile": { "narrative": 1.5, "visual": 1.3, "audio": 1.3, "level": 1.1, "core": 0.6, "systems": 0.3, "tech": 1.0, "ux": 0.9, "content": 0.8, "social": 0.1, "support": 0.7, "value": 0.9, "original": 1.1 } },
-    { "id": "deckbuilder", "name": "Деckbuilder", "note": "Синергии, баланс и вариативность", "profile": { "core": 1.3, "systems": 1.4, "content": 1.2, "level": 1.0, "original": 1.05, "visual": 1.0, "audio": 1.0, "tech": 0.95, "narrative": 0.6, "ux": 1.0, "social": 0.4, "support": 0.95, "value": 1.0 } },
+    { "id": "walking_sim", "name": "Симулятор прогулки", "note": "Атмосфера, окружение и история", "profile": { "narrative": 1.5, "visual": 1.3, "audio": 1.3, "level": 1.1, "core": 0.6, "systems": 0.3, "tech": 1.0, "ux": 0.9, "content": 0.8, "social": 0.1, "support": 0.7, "value": 0.9, "original": 1.1 } },
+    { "id": "deckbuilder", "name": "Карточная игра с колодой", "note": "Сочетания карт, баланс и выбор тактики", "profile": { "core": 1.3, "systems": 1.4, "content": 1.2, "level": 1.0, "original": 1.05, "visual": 1.0, "audio": 1.0, "tech": 0.95, "narrative": 0.6, "ux": 1.0, "social": 0.4, "support": 0.95, "value": 1.0 } },
     { "id": "rhythm", "name": "Ритм-игра", "note": "Тайминг, музыка и читаемость", "profile": { "core": 1.45, "audio": 1.4, "visual": 1.1, "content": 1.05, "tech": 1.1, "level": 0.9, "systems": 0.7, "narrative": 0.3, "ux": 0.95, "social": 1.0, "support": 0.9, "value": 0.95, "original": 0.9 } },
-    { "id": "immersive_sim", "name": "Иммерсив-сим", "note": "Свобода, системы и реактивность мира", "profile": { "level": 1.3, "systems": 1.25, "core": 1.1, "narrative": 1.1, "visual": 1.05, "audio": 1.15, "tech": 1.05, "ux": 0.9, "content": 0.95, "social": 0.3, "support": 0.85, "value": 0.9, "original": 1.1 } }
+    { "id": "immersive_sim", "name": "Симулятор со свободой действий", "note": "Свобода решений и реакция игрового мира", "profile": { "level": 1.3, "systems": 1.25, "core": 1.1, "narrative": 1.1, "visual": 1.05, "audio": 1.15, "tech": 1.05, "ux": 0.9, "content": 0.95, "social": 0.3, "support": 0.85, "value": 0.9, "original": 1.1 } }
   ],
   "statuses": [
     { "id": "done", "name": "Пройдена" },
@@ -1028,11 +1028,11 @@
     { "key": "notes", "label": "Заметки", "type": "textarea", "placeholder": "Свободные наблюдения, спойлеры, детали" }
   ],
   "grades": [
-    { "min": 90, "letter": "S", "label": "Выдающаяся", "color": "#4bb3a1" },
-    { "min": 80, "letter": "A", "label": "Отличная", "color": "#7fb85a" },
-    { "min": 70, "letter": "B", "label": "Хорошая", "color": "#a8bf52" },
-    { "min": 60, "letter": "C", "label": "Уверенная", "color": "#d9c04a" },
-    { "min": 45, "letter": "D", "label": "Смешанная", "color": "#e08a3d" },
-    { "min": 0, "letter": "E", "label": "Слабая", "color": "#e0533d" }
+    { "min": 90, "letter": "S", "label": "Выдающаяся", "color": "#8fae9a" },
+    { "min": 80, "letter": "A", "label": "Отличная", "color": "#a3ae86" },
+    { "min": 70, "letter": "B", "label": "Хорошая", "color": "#b8ad84" },
+    { "min": 60, "letter": "C", "label": "Крепкая", "color": "#9c8e64" },
+    { "min": 45, "letter": "D", "label": "Неровная", "color": "#b8886f" },
+    { "min": 0, "letter": "E", "label": "Слабая", "color": "#a9675f" }
   ]
 }
