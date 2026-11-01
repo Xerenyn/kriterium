@@ -557,26 +557,45 @@ window.K = window.K || {};
       (steam.supportedLanguages ? '<div class="divider"></div><div class="tiny dim" style="margin-bottom:4px">ЯЗЫКИ</div><div class="tiny muted" style="line-height:1.5">' + U.esc(steam.supportedLanguages) + '</div>' : '') +
       '<div class="divider"></div><p class="tiny dim">Оценка Metacritic показывается, если она указана в карточке игры Steam.</p></div></div>'
 
-    if (steam.aboutText || steam.pcMinimum || steam.achievementsTotal) {
-      html += '<div class="two-col" style="margin-top:16px;align-items:start">' +
-        '<div class="card pad">' + cardTitle('Подробно об игре', 'Полное описание со страницы Steam') +
-        '<div class="small muted" style="white-space:pre-line;line-height:1.68;max-height:420px;overflow-y:auto;padding-right:6px">' +
-        U.esc(steam.aboutText || steam.description || 'Описание отсутствует.') + '</div></div>' +
-        '<div style="display:flex;flex-direction:column;gap:16px">' +
-        (steam.achievementsTotal ? '<div class="card pad">' + cardTitle('Достижения Steam (' + steam.achievementsTotal + ')', 'Примеры достижений этой игры') +
-          '<div class="row wrap" style="gap:8px">' + (steam.achievementsHighlighted || []).map((a) => {
-            const icon = safeSteamImage(a.icon)
-            return '<div class="chip" style="padding:4px 9px;gap:7px">' +
-              (icon ? '<img src="' + U.attr(icon) + '" alt="" style="width:20px;height:20px;border-radius:4px">' : '') +
-              '<span>' + U.esc(a.name) + '</span></div>'
-          }).join('') + '</div></div>' : '') +
-        ((steam.pcMinimum || steam.pcRecommended) ? '<div class="card pad">' + cardTitle('Системные требования (ПК)', 'По данным Steam') +
-          (steam.pcMinimum ? '<div class="tiny muted" style="white-space:pre-line;line-height:1.55">' + U.esc(steam.pcMinimum) + '</div>' : '') +
-          (steam.pcRecommended ? '<div class="divider"></div><div class="tiny muted" style="white-space:pre-line;line-height:1.55">' + U.esc(steam.pcRecommended) + '</div>' : '') +
-          '</div>' : '') +
+    if (steam.aboutText) {
+      html += '<div class="card pad" style="margin-top:16px">' +
+        cardTitle('Подробно об игре', 'Описание со страницы игры в Steam') +
+        '<div class="small muted" style="white-space:pre-line;line-height:1.7;max-height:360px;overflow-y:auto;padding-right:6px">' +
+        U.esc(steam.aboutText) + '</div></div>'
+    }
+
+    if (steam.pcMinimum || steam.pcRecommended) {
+      html += '<div class="card pad" style="margin-top:16px">' +
+        cardTitle('Системные требования (ПК)', 'Конфигурация по данным Steam') +
+        '<div class="req-grid' + (steam.pcMinimum && steam.pcRecommended ? '' : ' single') + '">' +
+        (steam.pcMinimum ? renderReqBlock('Минимальные', steam.pcMinimum) : '') +
+        (steam.pcRecommended ? renderReqBlock('Рекомендованные', steam.pcRecommended) : '') +
         '</div></div>'
     }
     return html
+  }
+
+  function renderReqBlock(label, rawText) {
+    const lines = String(rawText || '')
+      .split('\n')
+      .map((l) => l.replace(/^[•*\-\s]+/, '').trim())
+      .filter(Boolean)
+      .filter((l) => !/^(минимальные|рекомендованные|minimum|recommended)\s*:?$/i.test(l))
+
+    const rows = []
+    for (const line of lines) {
+      const idx = line.indexOf(':')
+      if (idx > 0 && idx < 42) {
+        const key = line.slice(0, idx).replace(/\s*\*$/, '').trim()
+        const val = line.slice(idx + 1).trim()
+        if (val) {
+          rows.push('<div class="req-row"><span class="req-key">' + U.esc(key) + '</span><span class="req-val">' + U.esc(val) + '</span></div>')
+        }
+      } else {
+        rows.push('<div class="req-note">' + U.esc(line) + '</div>')
+      }
+    }
+    return '<div class="req-col"><div class="req-head">' + U.esc(label) + '</div><div class="req-list">' + rows.join('') + '</div></div>'
   }
 
   function scoreStat(label, value, sub, key) {
