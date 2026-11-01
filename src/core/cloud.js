@@ -5,6 +5,8 @@ const path = require('node:path')
 
 const PROFILE_FIELDS = 'id,handle,display_name,bio,avatar,is_public,badges,created_at'
 const APP_USER_AGENT = 'Kriterium/1.0 (Windows desktop app)'
+const DEFAULT_SUPABASE_URL = 'https://fubyxivjqtnmzpwinzge.supabase.co'
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1Ynl4aXZqcXRubXpwd2luemdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NDQ5MTgsImV4cCI6MjEwOTEyMDkxOH0.0_ZMAOqk0mMVIR4g7AnWCSR4oUMwbHPDl0LwdjvdVrE'
 
 function safeError(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback
@@ -27,7 +29,9 @@ function normalizeBaseUrl(value, allowLocal) {
 }
 
 function createCloud(configPath, safeStorage, options = {}) {
-  let config = { url: '', anonKey: '', encryptedSession: '' }
+  const defaultUrl = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_URL
+  const defaultAnonKey = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_ANON_KEY
+  let config = { url: defaultUrl, anonKey: defaultAnonKey, encryptedSession: '' }
   let session = null
   let loaded = false
   let writeQueue = Promise.resolve()
@@ -38,8 +42,8 @@ function createCloud(configPath, safeStorage, options = {}) {
     try {
       const raw = await fs.readFile(configPath, 'utf8')
       const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''))
-      config.url = typeof parsed.url === 'string' ? parsed.url : ''
-      config.anonKey = typeof parsed.anonKey === 'string' ? parsed.anonKey : ''
+      config.url = typeof parsed.url === 'string' && parsed.url ? parsed.url : defaultUrl
+      config.anonKey = typeof parsed.anonKey === 'string' && parsed.anonKey ? parsed.anonKey : defaultAnonKey
       config.encryptedSession = typeof parsed.encryptedSession === 'string' ? parsed.encryptedSession : ''
       if (config.encryptedSession && safeStorage && safeStorage.isEncryptionAvailable()) {
         try {

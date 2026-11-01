@@ -23,7 +23,9 @@ test('cloud settings persist only the public project config and validate sign-up
     encryptString: (value) => Buffer.from('mock:' + value, 'utf8'),
     decryptString: (value) => value.toString('utf8').replace(/^mock:/, '')
   }
-  const cloud = createCloud(path.join(dir, 'cloud.json'), safeStorage, { isPackaged: true })
+  const cloud = createCloud(path.join(dir, 'cloud.json'), safeStorage, { isPackaged: true, disableDefaultConfig: true })
+  const outOfBox = createCloud(path.join(dir, 'fresh.json'), safeStorage, { isPackaged: true })
+  assert.equal((await outOfBox.status()).configured, true)
 
   assert.equal((await cloud.status()).configured, false)
   await assert.rejects(cloud.configure({ url: 'https://example.org', anonKey: 'x'.repeat(32) }), /supabase\.co/)
