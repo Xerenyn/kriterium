@@ -96,11 +96,12 @@ window.K = window.K || {};
     html += '<div class="card profile-hero"><div class="avatar-big">' + U.esc(profile.avatar || '🎮') + '</div>' +
       '<div class="grow"><h2>' + U.esc(profile.nickname || 'Игрок') + '</h2>' +
       '<div class="tagline">' + U.esc(profile.tagline || 'Без описания') + '</div>' +
-      '<div class="row" style="margin-top:9px"><span class="chip accent">локальный аккаунт</span>' +
+      '<div class="row wrap" id="local-profile-chips" style="margin-top:9px"><span class="chip accent">локальный аккаунт</span>' +
       '<span class="chip">с ' + U.esc(U.formatDate(profile.createdAt)) + '</span>' +
       '<span class="chip">' + stats.played + ' ' + U.plural(stats.played, 'игра', 'игры', 'игр') + '</span></div></div>' +
       '<div style="text-align:right">' + (stats.average == null ? '<div class="stat-value">—</div>' : '<div class="stat-value" style="color:' + U.scoreColor(stats.average) + '">' + U.formatNumber(stats.average) + '<small>/100</small></div>') +
-      '<div class="stat-label">средний балл</div></div></div>'
+      '<div class="stat-label">средний балл</div></div></div>' +
+      '<div id="local-profile-achievements"></div>'
 
     html += '<div class="stats">' +
       '<div class="stat"><div class="stat-value">' + stats.played + '</div><div class="stat-label">игр в профиле</div></div>' +
@@ -141,6 +142,38 @@ window.K = window.K || {};
       '</div><div class="tiny dim" style="margin-top:10px">Экспорт включает профиль, игры, все оценки и установленные патчи. Импорт объединяет данные по id записей.</div></div>'
 
     view.innerHTML = shell(html)
+
+    api.cloud.status().then(async (st) => {
+      if (!st?.signedIn || !view.isConnected || location.hash !== '#/profile') return
+      const [cloudProfile, isDev] = await Promise.all([
+        api.cloud.myProfile().catch(() => null),
+        api.cloud.isDeveloper().catch(() => false)
+      ])
+      if (!view.isConnected || location.hash !== '#/profile') return
+      const badges = Array.isArray(cloudProfile?.badges) ? cloudProfile.badges.slice() : []
+      if (isDev && !badges.some((b) => b && b.id === 'developer_kriterium')) {
+        badges.unshift({
+          id: 'developer_kriterium',
+          title: 'Разработчик Критериум',
+          description: 'Создатель и единственный владелец платформы «Критериум»',
+          icon: '👑'
+        })
+      }
+      if (!badges.length) return
+      const chips = U.$('#local-profile-chips', view)
+      if (chips) {
+        chips.insertAdjacentHTML('afterbegin', badges.map((b) =>
+          '<span class="ach-pill" title="' + U.attr(b.description || b.title) + '">' + U.esc((b.icon || '👑') + ' ' + b.title) + '</span>'
+        ).join(''))
+      }
+      const box = U.$('#local-profile-achievements', view)
+      if (box) {
+        box.innerHTML = '<div style="margin-bottom:16px">' + badges.map((b) =>
+          '<div class="ach-card"><div class="ach-icon">' + U.esc(b.icon || '👑') + '</div><div><div class="ach-title">' + U.esc(b.title) + '</div>' +
+          (b.description ? '<div class="ach-desc">' + U.esc(b.description) + '</div>' : '') + '</div></div>'
+        ).join('') + '</div>'
+      }
+    }).catch(() => {})
 
     U.$('[data-action="edit-profile"]', view).addEventListener('click', openProfileEditor)
     U.$('[data-action="export-json"]', view).addEventListener('click', exportJson)

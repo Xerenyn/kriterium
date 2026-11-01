@@ -157,6 +157,34 @@ window.K = window.K || {};
     })
   }
 
+  function badgeList(profile, isDeveloper) {
+    const raw = Array.isArray(profile?.badges) ? profile.badges.slice() : []
+    if (isDeveloper && !raw.some((b) => b && b.id === 'developer_kriterium')) {
+      raw.unshift({
+        id: 'developer_kriterium',
+        title: 'Разработчик Критериум',
+        description: 'Создатель и единственный владелец платформы «Критериум»',
+        icon: '👑'
+      })
+    }
+    return raw.filter((b) => b && b.title)
+  }
+
+  function badgePillsHtml(profile, isDeveloper) {
+    return badgeList(profile, isDeveloper).map((b) =>
+      '<span class="ach-pill" title="' + U.attr(b.description || b.title) + '">' + U.esc((b.icon || '👑') + ' ' + b.title) + '</span>'
+    ).join('')
+  }
+
+  function badgeCardsHtml(profile, isDeveloper) {
+    const list = badgeList(profile, isDeveloper)
+    if (!list.length) return '<div class="small dim">Пока нет достижений.</div>'
+    return '<div style="display:flex;flex-direction:column;gap:10px">' + list.map((b) =>
+      '<div class="ach-card"><div class="ach-icon">' + U.esc(b.icon || '👑') + '</div><div><div class="ach-title">' + U.esc(b.title) + '</div>' +
+      (b.description ? '<div class="ach-desc">' + U.esc(b.description) + '</div>' : '') + '</div></div>'
+    ).join('') + '</div>'
+  }
+
   async function renderSignedIn(view, status) {
     let profile = null
     let isDeveloper = false
@@ -168,12 +196,13 @@ window.K = window.K || {};
     }
     if (!view.isConnected || location.hash !== '#/account') return
     const role = isDeveloper ? '<span class="chip accent">Разработчик приложения</span>' : '<span class="chip good">Участник</span>'
+    const pills = badgePillsHtml(profile, isDeveloper)
     const html = head('Сообщество', 'Ваш аккаунт', 'Этот аккаунт используется для общих страниц игр и публикации оценок.') +
       (profileError ? '<div class="chip bad" style="margin-bottom:14px">' + U.esc(profileError) + '</div>' : '') +
       '<div class="card profile-hero"><div class="avatar-big">' + U.esc(profile?.avatar || '🎮') + '</div>' +
       '<div class="grow"><h2>' + U.esc(profile?.display_name || 'Игрок') + '</h2>' +
       '<div class="tagline">@' + U.esc(profile?.handle || 'профиль не создан') + ' · ' + U.esc(status.user?.email || '') + '</div>' +
-      '<div class="row wrap" style="margin-top:9px">' + role + '<span class="chip">' + (profile?.is_public ? 'профиль открыт' : 'профиль закрыт') + '</span></div></div>' +
+      '<div class="row wrap" style="margin-top:9px">' + pills + role + '<span class="chip">' + (profile?.is_public ? 'профиль открыт' : 'профиль закрыт') + '</span></div></div>' +
       '<div class="row wrap"><button class="btn" data-route="#/community">Участники</button><button class="btn ghost" id="cloud-signout">Выйти</button></div></div>' +
       '<div class="two-col" style="margin-top:16px"><div class="card pad">' + cardTitle('Публичный профиль', 'Другие участники увидят его в списке, если он открыт.') +
       '<div class="form-grid"><div class="field span2"><label>Имя</label><input id="pub-display" type="text" maxlength="60" value="' + U.attr(profile?.display_name || '') + '"></div>' +
@@ -181,10 +210,12 @@ window.K = window.K || {};
       '<div class="field span4"><label>О себе</label><textarea id="pub-bio" maxlength="280" placeholder="Коротко о ваших игровых вкусах">' + U.esc(profile?.bio || '') + '</textarea></div>' +
       '</div><label class="row small muted" style="margin-top:10px"><input id="pub-open" type="checkbox" style="accent-color:var(--accent)"' + (profile?.is_public ? ' checked' : '') + '> Показывать профиль и мои публичные оценки другим участникам</label>' +
       '<button class="btn primary" id="pub-save" style="margin-top:14px">Сохранить профиль</button></div>' +
+      '<div style="display:flex;flex-direction:column;gap:14px"><div class="card pad">' + cardTitle('Достижения в профиле', 'Выдаются сервером и видны всем участникам.') +
+      badgeCardsHtml(profile, isDeveloper) + '</div>' +
       '<div class="card pad">' + cardTitle('Моя роль', 'Права разработчика назначает только владелец проекта Supabase.') +
       (isDeveloper ? '<p class="small muted">У вас есть права управлять общим каталогом, внешними оценками, публичными отзывами и официальными патчами.</p>' : '<p class="small muted">Сейчас у вас права участника: можно оценивать игры и управлять своим профилем. Изменять общие данные и патчи нельзя.</p>' +
         '<button class="btn ghost sm" id="cloud-download-developer-sql" style="margin-top:12px">Скачать SQL для аккаунта разработчика</button>') +
-      '</div></div>'
+      '</div></div></div>'
     view.innerHTML = shell(html)
     U.$('#cloud-signout', view).addEventListener('click', async () => {
       await api.cloud.signOut()
@@ -400,8 +431,9 @@ window.K = window.K || {};
 
   function reviewCard(review) {
     const profile = review.profile || {}
-    return '<article class="community-review"><div class="row"><span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
+    return '<article class="community-review"><div class="row wrap"><span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
       '<button class="text-link" data-route="#/person/' + U.attr(profile.handle || '') + '">' + U.esc(profile.display_name || profile.handle || 'Участник') + '</button>' +
+      badgePillsHtml(profile, false) +
       '<span class="spacer"></span><b class="review-score" style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</b></div>' +
       (review.review_title ? '<h4 style="margin-top:9px">' + U.esc(review.review_title) + '</h4>' : '') +
       '<div class="tiny dim" style="margin-top:5px">Жанр: ' + U.esc(review.genre_id || 'не указан') + '</div>' +
@@ -465,8 +497,9 @@ window.K = window.K || {};
   }
 
   function profileCard(profile) {
+    const pills = badgePillsHtml(profile, false)
     return '<button class="card person-card" data-route="#/person/' + U.attr(profile.handle) + '">' +
-      '<span class="avatar-big">' + U.esc(profile.avatar || '🎮') + '</span><span class="person-card-info"><b>' + U.esc(profile.display_name) + '</b>' +
+      '<span class="avatar-big">' + U.esc(profile.avatar || '🎮') + '</span><span class="person-card-info"><span class="row wrap" style="gap:6px"><b>' + U.esc(profile.display_name) + '</b>' + pills + '</span>' +
       '<small>@' + U.esc(profile.handle) + '</small><span>' + U.esc(profile.bio || 'О себе пока не написано.') + '</span></span>' + U.icon('arrow', 16) + '</button>'
   }
 
@@ -480,10 +513,14 @@ window.K = window.K || {};
         return
       }
       const p = result.profile
+      const pills = badgePillsHtml(p, false)
+      const list = badgeList(p, false)
       let html = '<div class="row" style="margin-bottom:14px"><button class="btn ghost sm" data-route="#/community">' + U.icon('back', 14) + ' Участники</button></div>' +
         '<div class="card profile-hero"><div class="avatar-big">' + U.esc(p.avatar || '🎮') + '</div><div class="grow"><h2>' + U.esc(p.display_name) + '</h2>' +
         '<div class="tagline">@' + U.esc(p.handle) + '</div><p class="small muted" style="margin-top:8px">' + U.esc(p.bio || 'О себе пока не написано.') + '</p>' +
+        (pills ? '<div class="row wrap" style="margin-top:9px">' + pills + '</div>' : '') +
         '</div><span class="chip good">Открытый профиль</span></div>' +
+        (list.length ? '<div class="subhead"><h3>Достижения</h3><div class="line"></div><span class="tiny dim">' + list.length + '</span></div>' + badgeCardsHtml(p, false) : '') +
         '<div class="subhead"><h3>Оценки игр</h3><div class="line"></div><span class="tiny dim">' + result.reviews.length + '</span></div>'
       if (!result.reviews.length) html += '<div class="empty"><h3>Пока нет публичных оценок</h3><p>Когда владелец профиля опубликует оценку, она появится здесь.</p></div>'
       else html += '<div class="game-grid">' + result.reviews.map((r) => personReviewCard(r)).join('') + '</div>'

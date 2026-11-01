@@ -3,7 +3,7 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
 
-const PROFILE_FIELDS = 'id,handle,display_name,bio,avatar,is_public,created_at'
+const PROFILE_FIELDS = 'id,handle,display_name,bio,avatar,is_public,badges,created_at'
 const APP_USER_AGENT = 'Kriterium/1.0 (Windows desktop app)'
 
 function safeError(payload, fallback) {
@@ -378,7 +378,7 @@ function createCloud(configPath, safeStorage, options = {}) {
       const [scores, summary, reviews] = await Promise.all([
         rest('external_ratings?select=source,score,max_score,vote_count,url,fetched_at&game_id=eq.' + encodeURIComponent(game.id) + '&order=source.asc'),
         rest('game_rating_summary?select=genre_id,review_count,average_score,average_coverage&game_id=eq.' + encodeURIComponent(game.id) + '&order=review_count.desc'),
-        rest('reviews?select=id,profile_id,genre_id,score,coverage,review_title,verdict,pros,cons,criterion_ratings,updated_at,profile:profiles(handle,display_name,avatar)&game_id=eq.' + encodeURIComponent(game.id) + '&is_public=eq.true&order=updated_at.desc&limit=50')
+        rest('reviews?select=id,profile_id,genre_id,score,coverage,review_title,verdict,pros,cons,criterion_ratings,updated_at,profile:profiles(handle,display_name,avatar,badges)&game_id=eq.' + encodeURIComponent(game.id) + '&is_public=eq.true&order=updated_at.desc&limit=50')
       ])
       return {
         game,
