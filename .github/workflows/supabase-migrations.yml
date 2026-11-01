@@ -1,0 +1,46 @@
+name: Apply Supabase migrations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/config.toml'
+      - '.github/workflows/supabase-migrations.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Apply database schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Supabase connection secret
+        id: credentials
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [[ -n "$SUPABASE_DB_URL" ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "SUPABASE_DB_URL is not set; database deployment is skipped."
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.credentials.outputs.configured == 'true'
+        with:
+          version: latest
+
+      - name: Push migrations to Supabase
+        if: steps.credentials.outputs.configured == 'true'
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: supabase db push --db-url "$SUPABASE_DB_URL"
