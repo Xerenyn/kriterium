@@ -69,11 +69,10 @@ function createWindow() {
     if (level >= 2) console.log('[renderer]', message, '(' + sourceId + ':' + line + ')')
   })
 
-  if (process.env.KRIT_SCREENSHOT) {
+  if (process.env.KRIT_SCREENSHOT || process.env.KRIT_SMOKE) {
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
         try {
-          if (process.env.KRIT_SMOKE_OUT) await fs.writeFile(process.env.KRIT_SMOKE_OUT + '.started', new Date().toISOString(), 'utf8')
           if (process.env.KRIT_ROUTE) {
             await mainWindow.webContents.executeJavaScript('location.hash = ' + JSON.stringify(process.env.KRIT_ROUTE))
             await new Promise((resolve) => setTimeout(resolve, 900))
@@ -87,11 +86,13 @@ function createWindow() {
             app.exit(result && result.ok ? 0 : 1)
             return
           }
-          const image = await mainWindow.webContents.capturePage()
-          await fs.writeFile(process.env.KRIT_SCREENSHOT, image.toPNG())
-          console.log('screenshot saved:', process.env.KRIT_SCREENSHOT)
+          if (process.env.KRIT_SCREENSHOT) {
+            const image = await mainWindow.webContents.capturePage()
+            await fs.writeFile(process.env.KRIT_SCREENSHOT, image.toPNG())
+            console.log('screenshot saved:', process.env.KRIT_SCREENSHOT)
+          }
         } catch (err) {
-          console.error('screenshot failed', err)
+          console.error('screenshot or smoke failed', err)
           if (process.env.KRIT_SMOKE_OUT) {
             try { await fs.writeFile(process.env.KRIT_SMOKE_OUT + '.error.txt', String((err && err.stack) || err), 'utf8') } catch { /* noop */ }
           }
