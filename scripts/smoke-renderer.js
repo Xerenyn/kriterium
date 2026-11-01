@@ -11,6 +11,11 @@
   check('window.K загружен', K && K.scoring && K.util && K.app)
   check('профиль загружен', K.app.profile && typeof K.app.profile.nickname === 'string')
 
+  const setupSql = await api.cloud.setupSql()
+  const developerSql = await api.cloud.bootstrapSql('owner@example.com')
+  check('SQL-схема Supabase доступна из приложения', setupSql.includes('public.app_patches') && setupSql.includes('create table if not exists public.games'))
+  check('скрипт разработчика подставляет владельца', developerSql.includes("owner@example.com") && !developerSql.includes('REPLACE-WITH-OWNER-EMAIL'))
+
   const base = K.app.base
   const criteriaCount = base.categories.reduce((n, c) => n + c.criteria.length, 0)
   check('126 критериев в ядре', criteriaCount === 126, criteriaCount)
