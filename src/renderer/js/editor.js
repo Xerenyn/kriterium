@@ -219,10 +219,22 @@ window.K = window.K || {};
     html += '<div class="editor-layout"><div class="editor-main">'
 
     /* карточка игры */
+    const linkedBanner = state.communityGame
+      ? '<div class="row wrap" style="margin-top:6px;gap:6px"><span class="ach-pill">Привязано к карточке игры · Steam #' + state.communityGame.steamAppId + '</span>' +
+        '<span class="tiny dim">Рецензия попадёт на общую страницу этой игры</span></div>'
+      : '<div class="tiny dim" style="margin-top:5px">Нажмите на поле или начните писать (например, Resident Evil), чтобы выбрать карточку игры</div>'
+
     html += '<div class="card pad"><div class="card-head" style="margin-bottom:12px"><div><div class="card-title">Игра</div>' +
-      '<div class="card-sub">Жанр определяет, с какими играми сравнивается оценка</div></div></div>' +
+      '<div class="card-sub">Выберите игру из списка — все рецензии участников собираются на общей карточке игры</div></div></div>' +
       '<div class="form-grid">' +
-      field('Название', '<input type="text" data-field="title" value="' + U.attr(g.title) + '" placeholder="Например, Disco Elysium"' + (state.communityGame ? ' readonly title="Название взято со страницы игры"' : ' autofocus') + '>', 'span2') +
+      field(
+        'Название',
+        '<div class="title-picker-wrap">' +
+          '<input type="text" data-field="title" autocomplete="off" value="' + U.attr(g.title) + '" placeholder="Нажмите для выбора из топа или начните вводить название…">' +
+          '<div class="title-picker-dropdown hidden" id="title-picker-dropdown"></div>' +
+        '</div>' + linkedBanner,
+        'span2'
+      ) +
       field('Жанр', '<select data-field="genre">' + genres.map((genre) => '<option value="' + U.attr(genre.id) + '"' + (g.genre === genre.id ? ' selected' : '') + '>' + U.esc(genre.name) + '</option>').join('') + '</select>', 'span2') +
       field('Год', '<input type="number" data-field="year" min="1950" max="2100" value="' + U.attr(g.year || '') + '" placeholder="2024">') +
       field('Статус', '<select data-field="status">' + statuses.map((s) => '<option value="' + U.attr(s.id) + '"' + (g.status === s.id ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>') +
@@ -574,6 +586,128 @@ window.K = window.K || {};
         markDirty()
       })
     })
+
+    bindTitlePicker(view)
+  }
+
+  let pickerCacheTop = null
+  let pickerTimer = null
+
+  function safePickerImg(value) {
+    try {
+      const url = new URL(String(value || ''))
+      return url.protocol === 'https:' && /(^|\.)(steamstatic\.com|akamaihd\.net)$/.test(url.hostname.split('.').slice(-2).join('.')) ? url.href : ''
+    } catch { return '' }
+  }
+
+  async function loadTopPickerItems() {
+    if (pickerCacheTop && Date.now() - pickerCacheTop.ts < 60000) return pickerCacheTop.items
+    const featured = await api.cloud.steamFeatured('featured').catch(() => [])
+    const commMap = await api.cloud.communityBySteamIds(featured.map((x) => x.steamAppId)).catch(() => ({}))
+    const items = featured.map((item) => Object.assign({}, item, { community: commMap[item.steamAppId] || null }))
+    items.sort((a, b) => ((b.community?.count || 0) - (a.community?.count || 0)) || ((b.community?.average || 0) - (a.community?.average || 0)))
+    pickerCacheTop = { ts: Date.now(), items }
+    return items
+  }
+
+  function bindTitlePicker(view) {
+    const input = U.$('[data-field="title"]', view)
+    const dropdown = U.$('#title-picker-dropdown', view)
+    if (!input || !dropdown) return
+
+    const renderDropdown = (items, heading) => {
+      if (!dropdown.isConnected) return
+      if (!items || !items.length) {
+        dropdown.innerHTML = '<div class="picker-empty">Игры не найдены — продолжайте вводить название</div>'
+        dropdown.classList.remove('hidden')
+        return
+      }
+      dropdown.innerHTML =
+        '<div class="picker-head">' + U.esc(heading) + '</div>' +
+        '<div class="picker-list">' +
+        items.slice(0, 8).map((item) => {
+          const img = safePickerImg(item.headerImage || item.image)
+          const comm = item.community
+          const sub = [
+            Array.isArray(item.genres) && item.genres.length ? item.genres.slice(0, 2).join(', ') : '',
+            item.releaseDate || '',
+            'Steam #' + item.steamAppId
+          ].filter(Boolean).join(' · ')
+          return '<button type="button" class="picker-item" data-pick-steam="' + Number(item.steamAppId) + '">' +
+            (img ? '<img src="' + U.attr(img) + '" alt="" class="picker-thumb">' : '<span class="picker-thumb placeholder">ИГРА</span>') +
+            '<span class="picker-info"><b>' + U.esc(item.title) + '</b><small>' + U.esc(sub) + '</small></span>' +
+            (comm?.count ? '<span class="ach-pill">★ ' + U.formatNumber(comm.average) + ' (' + comm.count + ')</span>' : '') +
+            (item.metacritic?.score ? '<span class="chip good">MC ' + item.metacritic.score + '</span>' : '') +
+            '<span class="picker-go">Оценить →</span>' +
+          '</button>'
+        }).join('') +
+        '</div>'
+      dropdown.classList.remove('hidden')
+
+      U.$$('[data-pick-steam]', dropdown).forEach((btn) => {
+        btn.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          const appId = Number(btn.dataset.pickSteam)
+          dropdown.classList.add('hidden')
+          if (appId > 0) {
+            window.K.app.navigate('#/review/' + appId)
+          }
+        })
+      })
+    }
+
+    const openWithQuery = async (rawQuery) => {
+      const q = String(rawQuery || '').trim()
+      if (q.length < 2) {
+        dropdown.innerHTML = '<div class="picker-empty">Загружаем топ игр для оценки…</div>'
+        dropdown.classList.remove('hidden')
+        const top = await loadTopPickerItems()
+        renderDropdown(top, 'Топ по оцениваниям в данный момент')
+        return
+      }
+      dropdown.innerHTML = '<div class="picker-empty">Ищем карточки игр «' + U.esc(q) + '»…</div>'
+      dropdown.classList.remove('hidden')
+      try {
+        const found = await api.cloud.steamSearch(q)
+        const commMap = await api.cloud.communityBySteamIds(found.map((x) => x.steamAppId)).catch(() => ({}))
+        const enriched = found.map((item) => Object.assign({}, item, { community: commMap[item.steamAppId] || null }))
+        renderDropdown(enriched, 'Выберите карточку игры для оценки')
+      } catch {
+        dropdown.innerHTML = '<div class="picker-empty">Не удалось выполнить поиск</div>'
+      }
+    }
+
+    input.addEventListener('focus', () => {
+      const q = input.value.trim()
+      if (state.communityGame && q === state.game.title) {
+        openWithQuery('')
+      } else {
+        openWithQuery(q)
+      }
+    })
+
+    input.addEventListener('click', () => {
+      if (dropdown.classList.contains('hidden')) {
+        const q = input.value.trim()
+        openWithQuery(state.communityGame && q === state.game.title ? '' : q)
+      }
+    })
+
+    input.addEventListener('input', () => {
+      clearTimeout(pickerTimer)
+      const q = input.value.trim()
+      if (q.length < 2) {
+        openWithQuery('')
+      } else {
+        pickerTimer = setTimeout(() => openWithQuery(q), 280)
+      }
+    })
+
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        if (dropdown.isConnected) dropdown.classList.add('hidden')
+      }, 200)
+    })
   }
 
   function bindActions(view) {
@@ -633,6 +767,24 @@ window.K = window.K || {};
     }
 
     try {
+      if (!state.communityGame) {
+        const st = await api.cloud.status().catch(() => null)
+        if (st?.signedIn) {
+          const matches = await api.cloud.steamSearch(game.title).catch(() => [])
+          const best = matches.find((m) => m.title.toLowerCase() === String(game.title).trim().toLowerCase()) || matches[0]
+          if (best?.steamAppId) {
+            const sharedGame = await api.cloud.addSteamGame(best.steamAppId).catch(() => null)
+            if (sharedGame?.id) {
+              state.communityGame = { steamAppId: best.steamAppId, gameId: sharedGame.id, game: sharedGame }
+              game.title = best.title || game.title
+              game.custom = Object.assign({}, game.custom || {}, {
+                _communityGameId: sharedGame.id,
+                _steamAppId: best.steamAppId
+              })
+            }
+          }
+        }
+      }
       const saved = await api.games.save(game, ratings)
       state.game = saved
       window.K.app.ratings[saved.id] = ratings

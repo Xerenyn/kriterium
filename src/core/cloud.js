@@ -280,6 +280,17 @@ function createCloud(configPath, safeStorage, options = {}) {
       }))
     },
 
+    async setProfileBadges(handle, badges) {
+      await ensureSession()
+      return await rest('rpc/developer_set_profile_badges', {
+        method: 'POST',
+        body: JSON.stringify({
+          target_handle: String(handle || '').trim().toLowerCase(),
+          new_badges: Array.isArray(badges) ? badges : []
+        })
+      })
+    },
+
     async updateMyProfile(input = {}) {
       await ensureSession()
       const body = {}

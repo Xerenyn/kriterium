@@ -158,30 +158,95 @@ window.K = window.K || {};
     })
   }
 
+  const BADGE_CATALOG = [
+    {
+      id: 'developer_kriterium',
+      title: 'Разработчик Критериум',
+      description: 'Создатель и единственный владелец платформы «Критериум»',
+      icon: 'crown',
+      style: 'gold'
+    },
+    {
+      id: 'beta_test',
+      title: 'Beta test',
+      description: 'Первопроходец и участник закрытого бета-тестирования «Критериума»',
+      icon: 'beta',
+      style: 'emerald'
+    },
+    {
+      id: 'first_wave',
+      title: 'Первая волна',
+      description: 'Один из первых участников сообщества «Критериум»',
+      icon: 'bolt',
+      style: 'amber'
+    },
+    {
+      id: 'top_critic',
+      title: 'Ведущий критик',
+      description: 'За глубокие и аргументированные разборы игр по критериям',
+      icon: 'trophy',
+      style: 'gold'
+    },
+    {
+      id: 'genre_expert',
+      title: 'Знаток жанра',
+      description: 'За серию подробных оценок внутри жанрового направления',
+      icon: 'target',
+      style: 'steel'
+    },
+    {
+      id: 'trusted_reviewer',
+      title: 'Проверенный автор',
+      description: 'Автор содержательных рецензий сообщества «Критериум»',
+      icon: 'star',
+      style: 'violet'
+    }
+  ]
+
+  const BADGE_SVGS = {
+    crown: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M2.5 14.5 4 6.5l4.2 3.3L10 4.5l1.8 5.3L16 6.5l1.5 8H2.5Z" fill="currentColor" opacity=".25"/><path d="M2.5 14.5 4 6.5l4.2 3.3L10 4.5l1.8 5.3L16 6.5l1.5 8H2.5Zm0 2h15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    beta: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M10 2.2 16.5 6v8L10 17.8 3.5 14V6L10 2.2Z" fill="currentColor" opacity=".22"/><path d="M10 2.2 16.5 6v8L10 17.8 3.5 14V6L10 2.2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M7.5 6.8h2.8a1.8 1.8 0 0 1 0 3.5H7.5V6.8Zm0 3.5h3.2a1.8 1.8 0 0 1 0 3.5H7.5v-3.5Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+    bolt: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M11 2.5 4.8 10.8h4.5l-.8 6.7 6.7-8.5h-4.6L11 2.5Z" fill="currentColor" opacity=".25" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>',
+    trophy: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="M6 3.5h8v4a4 4 0 0 1-8 0v-4ZM6 5H3.8v1.5a2.7 2.7 0 0 0 2.4 2.7M14 5h2.2v1.5a2.7 2.7 0 0 1-2.4 2.7M10 11.5v3.5M6.8 16h6.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    target: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="3.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="1.4" fill="currentColor"/></svg>',
+    star: '<svg viewBox="0 0 20 20" width="15" height="15" aria-hidden="true"><path d="m10 2.6 2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.9l5-.7L10 2.6Z" fill="currentColor" opacity=".24" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>'
+  }
+
+  function badgeIconHtml(badge) {
+    const key = badge?.icon || (badge?.id === 'beta_test' ? 'beta' : badge?.id === 'developer_kriterium' ? 'crown' : '')
+    if (BADGE_SVGS[key]) return BADGE_SVGS[key]
+    return U.esc(badge?.icon || '👑')
+  }
+
+  function badgeStyleClass(badge) {
+    if (badge?.style) return badge.style
+    if (badge?.id === 'beta_test') return 'emerald'
+    const preset = BADGE_CATALOG.find((x) => x.id === badge?.id)
+    return preset?.style || 'gold'
+  }
+
   function badgeList(profile, isDeveloper) {
     const raw = Array.isArray(profile?.badges) ? profile.badges.slice() : []
     if (isDeveloper && !raw.some((b) => b && b.id === 'developer_kriterium')) {
-      raw.unshift({
-        id: 'developer_kriterium',
-        title: 'Разработчик Критериум',
-        description: 'Создатель и единственный владелец платформы «Критериум»',
-        icon: '👑'
-      })
+      raw.unshift(BADGE_CATALOG[0])
     }
-    return raw.filter((b) => b && b.title)
+    return raw.filter((b) => b && b.title).map((b) => {
+      const preset = BADGE_CATALOG.find((x) => x.id === b.id)
+      return Object.assign({}, preset || {}, b)
+    })
   }
 
   function badgePillsHtml(profile, isDeveloper) {
     return badgeList(profile, isDeveloper).map((b) =>
-      '<span class="ach-pill" title="' + U.attr(b.description || b.title) + '">' + U.esc((b.icon || '👑') + ' ' + b.title) + '</span>'
+      '<span class="ach-pill ' + U.attr(badgeStyleClass(b)) + '" title="' + U.attr(b.description || b.title) + '">' + badgeIconHtml(b) + '<span>' + U.esc(b.title) + '</span></span>'
     ).join('')
   }
 
   function badgeCardsHtml(profile, isDeveloper) {
     const list = badgeList(profile, isDeveloper)
-    if (!list.length) return '<div class="small dim">Пока нет достижений.</div>'
+    if (!list.length) return '<div class="small dim">Пока нет наград.</div>'
     return '<div style="display:flex;flex-direction:column;gap:10px">' + list.map((b) =>
-      '<div class="ach-card"><div class="ach-icon">' + U.esc(b.icon || '👑') + '</div><div><div class="ach-title">' + U.esc(b.title) + '</div>' +
+      '<div class="ach-card ' + U.attr(badgeStyleClass(b)) + '"><div class="ach-icon">' + badgeIconHtml(b) + '</div><div><div class="ach-title">' + U.esc(b.title) + '</div>' +
       (b.description ? '<div class="ach-desc">' + U.esc(b.description) + '</div>' : '') + '</div></div>'
     ).join('') + '</div>'
   }
@@ -928,7 +993,11 @@ window.K = window.K || {};
   async function renderPerson(view, handle) {
     view.innerHTML = shell('<div class="card pad">Загружаем профиль…</div>')
     try {
-      const result = await api.cloud.publicProfile(handle)
+      const [result, status] = await Promise.all([
+        api.cloud.publicProfile(handle),
+        getStatus()
+      ])
+      const isDeveloper = status?.signedIn ? await api.cloud.isDeveloper().catch(() => false) : false
       if (!view.isConnected || location.hash !== '#/person/' + handle) return
       if (!result) {
         view.innerHTML = shell(head('Сообщество', 'Профиль не найден', 'Профиль может быть закрытым или адрес указан неверно.') + '<button class="btn" data-route="#/community">К участникам</button>')
@@ -937,16 +1006,20 @@ window.K = window.K || {};
       const p = result.profile
       const pills = badgePillsHtml(p, false)
       const list = badgeList(p, false)
-      let html = '<div class="row" style="margin-bottom:14px"><button class="btn ghost sm" data-route="#/community">' + U.icon('back', 14) + ' Участники</button></div>' +
+      let html = '<div class="row wrap" style="margin-bottom:14px"><button class="btn ghost sm" data-route="#/community">' + U.icon('back', 14) + ' Участники</button>' +
+        '<span class="spacer"></span>' +
+        (isDeveloper ? '<button class="btn primary sm" id="dev-manage-badges">👑 Выдать / изменить награды</button>' : '') +
+        '</div>' +
         '<div class="card profile-hero"><div class="avatar-big">' + U.esc(p.avatar || '🎮') + '</div><div class="grow"><h2>' + U.esc(p.display_name) + '</h2>' +
         '<div class="tagline">@' + U.esc(p.handle) + '</div><p class="small muted" style="margin-top:8px">' + U.esc(p.bio || 'О себе пока не написано.') + '</p>' +
         (pills ? '<div class="row wrap" style="margin-top:9px">' + pills + '</div>' : '') +
         '</div><span class="chip good">Открытый профиль</span></div>' +
-        (list.length ? '<div class="subhead"><h3>Достижения</h3><div class="line"></div><span class="tiny dim">' + list.length + '</span></div>' + badgeCardsHtml(p, false) : '') +
+        (list.length ? '<div class="subhead"><h3>Награды и достижения</h3><div class="line"></div><span class="tiny dim">' + list.length + '</span></div>' + badgeCardsHtml(p, false) : '') +
         '<div class="subhead"><h3>Оценки игр</h3><div class="line"></div><span class="tiny dim">' + result.reviews.length + '</span></div>'
       if (!result.reviews.length) html += '<div class="empty"><h3>Пока нет публичных оценок</h3><p>Когда владелец профиля опубликует оценку, она появится здесь.</p></div>'
       else html += '<div class="game-grid">' + result.reviews.map((r) => personReviewCard(r)).join('') + '</div>'
       view.innerHTML = shell(html)
+      U.$('#dev-manage-badges', view)?.addEventListener('click', () => openBadgeManagerModal(p, () => renderPerson(view, handle)))
       U.$$('[data-person-review]', view).forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation()
@@ -957,6 +1030,59 @@ window.K = window.K || {};
     } catch (err) {
       view.innerHTML = shell(head('Сообщество', 'Не удалось загрузить профиль', err.message || String(err)) + '<button class="btn" data-route="#/community">К участникам</button>')
     }
+  }
+
+  function openBadgeManagerModal(targetProfile, onSaved) {
+    const activeIds = new Set(badgeList(targetProfile, false).map((b) => b.id))
+    const body =
+      '<p class="small muted" style="margin-bottom:12px">Выберите награды для профиля <b>' + U.esc(targetProfile.display_name) + '</b> (@' + U.esc(targetProfile.handle) + '):</p>' +
+      '<div style="display:flex;flex-direction:column;gap:9px">' +
+      BADGE_CATALOG.map((b) => {
+        const checked = activeIds.has(b.id)
+        return '<label class="ach-card ' + U.attr(b.style) + '" style="cursor:pointer">' +
+          '<input type="checkbox" data-badge-id="' + U.attr(b.id) + '"' + (checked ? ' checked' : '') + ' style="width:16px;height:16px;accent-color:var(--accent)">' +
+          '<div class="ach-icon">' + badgeIconHtml(b) + '</div>' +
+          '<div class="grow"><div class="ach-title">' + U.esc(b.title) + '</div><div class="ach-desc">' + U.esc(b.description) + '</div></div>' +
+        '</label>'
+      }).join('') +
+      '</div>'
+
+    U.openModal({
+      title: 'Выдать награды · ' + targetProfile.display_name,
+      width: 600,
+      body,
+      footer: '<button class="btn ghost" data-cancel>Отмена</button><button class="btn primary" data-save>Сохранить награды</button>',
+      onMount({ root, close }) {
+        U.$('[data-cancel]', root)?.addEventListener('click', close)
+        U.$('[data-save]', root)?.addEventListener('click', async (e) => {
+          const btn = e.currentTarget
+          btn.disabled = true
+          btn.textContent = 'Сохраняем…'
+          const chosen = U.$$('[data-badge-id]', root)
+            .filter((cb) => cb.checked)
+            .map((cb) => BADGE_CATALOG.find((x) => x.id === cb.dataset.badgeId))
+            .filter(Boolean)
+            .map((b) => ({
+              id: b.id,
+              title: b.title,
+              description: b.description,
+              icon: b.icon,
+              style: b.style,
+              granted_at: new Date().toISOString()
+            }))
+          try {
+            await api.cloud.setProfileBadges(targetProfile.handle, chosen)
+            close()
+            U.toast('Награды профиля обновлены', 'good')
+            if (typeof onSaved === 'function') onSaved()
+          } catch (err) {
+            U.toast(err.message || 'Не удалось обновить награды', 'bad')
+            btn.disabled = false
+            btn.textContent = 'Сохранить награды'
+          }
+        })
+      }
+    })
   }
 
   function personReviewCard(review) {
