@@ -1182,3 +1182,94 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
   .notes-grid { grid-template-columns: 1fr; }
   .page-head { flex-direction: column; align-items: flex-start; }
 }
+
+/* ---------- проверка рецензии и модерация ---------- */
+
+.region-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  color: var(--muted);
+}
+
+.region-picker select {
+  appearance: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 0 2px;
+  cursor: pointer;
+  min-width: 126px;
+}
+
+.region-picker select option { background: var(--panel-2); color: var(--text); }
+
+.spell-box {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(191, 174, 125, 0.32);
+  border-radius: var(--radius-sm);
+  background: rgba(191, 174, 125, 0.07);
+}
+
+.spell-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel-2);
+  font-size: 12px;
+}
+
+.spell-err-word {
+  color: #e6b3a8;
+  text-decoration: underline wavy #c98a7f;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.4px;
+}
+
+.mod-warn-box {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(184, 130, 122, 0.34);
+  border-radius: var(--radius-sm);
+  background: rgba(184, 130, 122, 0.08);
+}
+
+.mod-queue { display: flex; flex-direction: column; gap: 10px; }
+
+.mod-queue-item {
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+
+.mod-queue-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  color: #d5b0aa;
+}
+
+.mod-queue-text {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+

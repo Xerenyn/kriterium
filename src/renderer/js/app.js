@@ -703,6 +703,9 @@ window.K = window.K || {};
         const cat = app.catalog(g.genre)
         const calc = S.computeScore(cat, r)
         const score = calc.rated > 0 ? calc.total : 50
+        const quality = window.K.Editor?.analyzeReviewQuality
+          ? window.K.Editor.analyzeReviewQuality(g, r, calc)
+          : { suspicious: false, suspicionReasons: [] }
         await api.cloud.saveReview({
           gameId,
           genreId: g.genre,
@@ -715,7 +718,9 @@ window.K = window.K || {};
           pros: g.pros || '',
           cons: g.cons || '',
           criterionRatings: r,
-          isPublic: true
+          moderationStatus: quality.suspicious ? 'pending' : 'approved',
+          moderationReasons: quality.suspicionReasons,
+          isPublic: !quality.suspicious
         }).catch(() => {})
       }
     } catch { /* ignore background sync errors */ }

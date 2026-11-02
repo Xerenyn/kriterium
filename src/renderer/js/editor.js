@@ -254,14 +254,16 @@ window.K = window.K || {};
 
     /* итоговый текст */
     html += '<div class="card pad" style="margin-top:14px"><div class="card-head" style="margin-bottom:12px"><div><div class="card-title">Вердикт и заметки</div>' +
-      '<div class="card-sub">Комментарии, которые не выразить баллом</div></div></div>' +
+      '<div class="card-sub">Орфография проверяется автоматически (слова с ошибками подчёркиваются, правый клик предлагает замену)</div></div></div>' +
       '<div class="form-grid">' +
-      field('Вердикт', '<textarea data-field="verdict" placeholder="Кому и зачем стоит играть — в двух предложениях">' + U.esc(g.verdict) + '</textarea>', 'span4') +
-      field('Сильные стороны', '<textarea data-field="pros" placeholder="По одному пункту на строку">' + U.esc(g.pros) + '</textarea>', 'span2') +
-      field('Слабые стороны', '<textarea data-field="cons" placeholder="По одному пункту на строку">' + U.esc(g.cons) + '</textarea>', 'span2') +
-      field('Заметки', '<textarea data-field="notes" placeholder="Свободные наблюдения, спойлеры, детали">' + U.esc(g.notes) + '</textarea>', 'span4') +
+      field('Вердикт', '<textarea data-field="verdict" spellcheck="true" lang="ru" placeholder="Кому и зачем стоит играть — в двух предложениях">' + U.esc(g.verdict) + '</textarea>', 'span4') +
+      field('Сильные стороны', '<textarea data-field="pros" spellcheck="true" lang="ru" placeholder="По одному пункту на строку">' + U.esc(g.pros) + '</textarea>', 'span2') +
+      field('Слабые стороны', '<textarea data-field="cons" spellcheck="true" lang="ru" placeholder="По одному пункту на строку">' + U.esc(g.cons) + '</textarea>', 'span2') +
+      field('Заметки', '<textarea data-field="notes" spellcheck="true" lang="ru" placeholder="Свободные наблюдения, спойлеры, детали">' + U.esc(g.notes) + '</textarea>', 'span4') +
       customFieldsHtml() +
-      '</div></div>'
+      '</div>' +
+      '<div id="review-quality-box" style="margin-top:12px"></div>' +
+      '</div>'
 
     html += '</div>'
 
@@ -546,6 +548,184 @@ window.K = window.K || {};
         : coverage < 50 ? '<div class="warn-note">Покрытие ниже 50%: балл черновой. Незаполненные категории не учитываются, а их вес перераспределяется.</div>'
           : '') +
       '</div>'
+    renderQualityPanel()
+  }
+
+  const SPELL_FIXES = {
+    'вообщем': 'в общем',
+    'вкратце': 'вкратце',
+    'придти': 'прийти',
+    'прийдется': 'придётся',
+    'прийдеться': 'придётся',
+    'ихний': 'их',
+    'ихняя': 'их',
+    'ихние': 'их',
+    'евоный': 'его',
+    'ейный': 'её',
+    'черезчур': 'чересчур',
+    'черес-чур': 'чересчур',
+    'зделать': 'сделать',
+    'зделал': 'сделал',
+    'зделано': 'сделано',
+    'здеся': 'здесь',
+    'тута': 'тут',
+    'симпотичный': 'симпатичный',
+    'агенство': 'агентство',
+    'будующее': 'будущее',
+    'следующий': 'следующий',
+    'следущий': 'следующий',
+    'извените': 'извините',
+    'координально': 'кардинально',
+    'персонажы': 'персонажи',
+    'сюжит': 'сюжет',
+    'геймплэй': 'геймплей',
+    'графикаа': 'графика',
+    'оптимизацыя': 'оптимизация',
+    'локализацыя': 'локализация',
+    'анимацыя': 'анимация',
+    'механника': 'механика',
+    'механники': 'механики',
+    'реиграбильность': 'реиграбельность',
+    'атмосферненько': 'атмосферно',
+    'скукотаа': 'скукота',
+    'невозможноо': 'невозможно',
+    'отвратительноо': 'отвратительно',
+    'шикарноо': 'шикарно',
+    'лучьше': 'лучше',
+    'худше': 'хуже',
+    'ниразу': 'ни разу',
+    'потомучто': 'потому что',
+    'также': 'также',
+    'какбудто': 'как будто',
+    'врятли': 'вряд ли',
+    'наврятли': 'навряд ли'
+  }
+
+  const PROFANITY_RE = /(?:^|[^а-яa-zё])(ху[йеяиюл]|пизд|еба[тлн]|ебл[аоу]|бля[дт]|сук[аи]|муда[кч]|гандон|пидор|уеб|залуп|fuck|shit|bitch)(?:[^а-яa-zё]|$)/i
+  const SMASH_RE = /(?:фыв|йцу|ячс|asd|qwe|zxc){2,}|(.)\1{4,}/i
+
+  function analyzeReviewQuality(game, ratings, calculated) {
+    const fields = [
+      ['verdict', 'Вердикт', String(game?.verdict || '')],
+      ['pros', 'Сильные стороны', String(game?.pros || '')],
+      ['cons', 'Слабые стороны', String(game?.cons || '')],
+      ['notes', 'Заметки', String(game?.notes || '')]
+    ]
+    const typos = []
+    const suspicionReasons = []
+    let hasProfanity = false
+    let hasSmash = false
+
+    for (const [fieldKey, fieldLabel, text] of fields) {
+      if (!text.trim()) continue
+      if (PROFANITY_RE.test(text)) hasProfanity = true
+      if (SMASH_RE.test(text)) hasSmash = true
+      const trimmed = text.trim()
+      if (trimmed.length > 0 && trimmed.length <= 2 && /^[а-яa-z0-9]$/i.test(trimmed)) {
+        hasSmash = true
+      }
+
+      const words = text.match(/[а-яёa-z-]{3,}/gi) || []
+      for (const rawWord of words) {
+        const lower = rawWord.toLowerCase()
+        if (SPELL_FIXES[lower] && SPELL_FIXES[lower] !== lower) {
+          if (!typos.some((t) => t.word.toLowerCase() === lower && t.fieldKey === fieldKey)) {
+            typos.push({ fieldKey, fieldLabel, word: rawWord, suggestion: SPELL_FIXES[lower] })
+          }
+        } else if (/(.)\1{3,}/i.test(lower)) {
+          const fixed = rawWord.replace(/(.)\1{2,}/gi, '$1')
+          if (!typos.some((t) => t.word === rawWord && t.fieldKey === fieldKey)) {
+            typos.push({ fieldKey, fieldLabel, word: rawWord, suggestion: fixed })
+          }
+        } else if (/^[бвгджзклмнпрстфхцчшщ]{5,}$/i.test(lower)) {
+          if (!typos.some((t) => t.word === rawWord && t.fieldKey === fieldKey)) {
+            typos.push({ fieldKey, fieldLabel, word: rawWord, suggestion: null })
+          }
+        }
+      }
+    }
+
+    if (hasProfanity) {
+      suspicionReasons.push('Нецензурная лексика или оскорбления в тексте рецензии')
+    }
+    if (hasSmash) {
+      suspicionReasons.push('Подозрение на спам / бессвязный набор символов в тексте')
+    }
+
+    const numericCells = Object.values(ratings || {}).filter((c) => c && !c.na && c.v != null && Number.isFinite(Number(c.v)))
+    const count = numericCells.length
+    if (count >= 6) {
+      const zeros = numericCells.filter((c) => Number(c.v) === 0).length
+      const tens = numericCells.filter((c) => Number(c.v) === 10).length
+      if (zeros / count >= 0.85) {
+        suspicionReasons.push('Подозрительные оценки: почти все критерии выставлены в 0 (ревью-бомбинг)')
+      } else if (tens / count >= 0.85 && String(game?.verdict || '').trim().length < 20) {
+        suspicionReasons.push('Подозрительные оценки: почти все критерии выставлены в 10 без текстового обоснования')
+      }
+    }
+
+    const total = Number(calculated?.total) || 0
+    const cov = Number(calculated?.coverage) || 0
+    if (count > 0 && cov < 0.25 && (total >= 96 || total <= 15) && String(game?.verdict || '').trim().length < 25) {
+      suspicionReasons.push('Экстремальный итоговый балл (' + U.formatNumber(total) + ') при низком покрытии критериев (' + Math.round(cov * 100) + '%)')
+    }
+    if (count >= 4 && total >= 90 && !String(game?.pros || '').trim() && String(game?.cons || '').trim().length > 15) {
+      suspicionReasons.push('Противоречие: очень высокий балл (' + U.formatNumber(total) + '), но указаны только минусы')
+    }
+    if (count >= 4 && total <= 25 && !String(game?.cons || '').trim() && String(game?.pros || '').trim().length > 15) {
+      suspicionReasons.push('Противоречие: очень низкий балл (' + U.formatNumber(total) + '), но указаны только плюсы')
+    }
+
+    return {
+      typos,
+      suspicious: suspicionReasons.length > 0,
+      suspicionReasons
+    }
+  }
+
+  function renderQualityPanel() {
+    const box = U.$('#review-quality-box')
+    if (!box || !state.game || !state.catalog) return
+    const calc = S.computeScore(state.catalog, state.ratings)
+    const q = analyzeReviewQuality(state.game, state.ratings, calc)
+
+    let html = ''
+    if (q.typos.length) {
+      html += '<div class="spell-box">' +
+        '<div class="tiny" style="font-weight:600;color:#e4c887;margin-bottom:6px">Проверка орфографии — найдены слова с возможной ошибкой:</div>' +
+        '<div class="row wrap" style="gap:7px">' +
+        q.typos.map((t, idx) =>
+          '<span class="spell-item"><span class="tiny dim">' + U.esc(t.fieldLabel) + ':</span> ' +
+          '<span class="spell-err-word">' + U.esc(t.word) + '</span>' +
+          (t.suggestion ? ' → <button type="button" class="btn sm ghost" data-fix-idx="' + idx + '">Исправить на «' + U.esc(t.suggestion) + '»</button>' : '') +
+          '</span>'
+        ).join('') +
+        '</div></div>'
+    }
+
+    if (q.suspicious) {
+      html += '<div class="mod-warn-box">' +
+        '<div class="tiny" style="font-weight:650;color:#e09a8f;margin-bottom:4px">⚠ Подозрительная рецензия — при сохранении будет отправлена на модерацию:</div>' +
+        q.suspicionReasons.map((r) => '<div class="tiny" style="color:#d5b0aa">• ' + U.esc(r) + '</div>').join('') +
+        '</div>'
+    } else if (!q.typos.length && (state.game.verdict || state.game.pros || state.game.cons)) {
+      html += '<div class="tiny dim">✓ Орфография и корректность оценок проверены — замечаний нет.</div>'
+    }
+
+    box.innerHTML = html
+    U.$$('[data-fix-idx]', box).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const item = q.typos[Number(btn.dataset.fixIdx)]
+        if (!item || !item.suggestion) return
+        const current = String(state.game[item.fieldKey] || '')
+        const updated = current.replace(item.word, item.suggestion)
+        state.game[item.fieldKey] = updated
+        const textarea = U.$('[data-field="' + item.fieldKey + '"]')
+        if (textarea) textarea.value = updated
+        markDirty()
+        renderQualityPanel()
+      })
+    })
   }
 
   function bindMeta(view) {
@@ -574,6 +754,9 @@ window.K = window.K || {};
         if (key === 'title') {
           const h = U.$('.page-title', view)
           if (h && state.game.id) h.textContent = state.game.title || 'Без названия'
+        }
+        if (['verdict', 'pros', 'cons', 'notes'].includes(key)) {
+          renderQualityPanel()
         }
       }
       input.addEventListener(input.tagName === 'SELECT' || input.type === 'date' || input.type === 'checkbox' ? 'change' : 'input', handler)
@@ -793,6 +976,7 @@ window.K = window.K || {};
       const navCount = U.$('#nav-count')
       if (navCount) navCount.textContent = window.K.app.games.length ? String(window.K.app.games.length) : ''
       if (state.communityGame) {
+        const quality = analyzeReviewQuality(game, ratings, calculated)
         await api.cloud.saveReview({
           gameId: state.communityGame.gameId,
           genreId: game.genre,
@@ -805,12 +989,18 @@ window.K = window.K || {};
           pros: game.pros,
           cons: game.cons,
           criterionRatings: ratings,
-          isPublic: true
+          moderationStatus: quality.suspicious ? 'pending' : 'approved',
+          moderationReasons: quality.suspicionReasons,
+          isPublic: !quality.suspicious
         })
         localStorage.removeItem(state.draftKey)
         state.dirty = false
         state.saving = false
-        U.toast('Оценка опубликована на странице игры', 'good')
+        if (quality.suspicious) {
+          U.toast('Рецензия отправлена на модерацию (' + quality.suspicionReasons[0] + ')', 'bad')
+        } else {
+          U.toast('Оценка опубликована на странице игры', 'good')
+        }
         window.K.app.navigate('#/steam/' + state.communityGame.steamAppId)
       } else {
         localStorage.removeItem(state.draftKey)
@@ -835,5 +1025,5 @@ window.K = window.K || {};
     }
   }
 
-  window.K.Editor = { render }
+  window.K.Editor = { render, analyzeReviewQuality }
 })()

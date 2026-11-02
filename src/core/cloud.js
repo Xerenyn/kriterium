@@ -28,13 +28,19 @@ function normalizeBaseUrl(value, allowLocal) {
   return parsed.origin
 }
 
+const VALID_REGIONS = ['ru', 'kz', 'us', 'de', 'ua']
+function normalizeRegion(cc) {
+  const v = String(cc || '').trim().toLowerCase()
+  return VALID_REGIONS.includes(v) ? v : 'ru'
+}
+
 function createCloud(configPath, safeStorage, options = {}) {
   const defaultUrl = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_URL
   const defaultAnonKey = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_ANON_KEY
-  let config = { url: defaultUrl, anonKey: defaultAnonKey, encryptedSession: '' }
+  let config = { url: defaultUrl, anonKey: defaultAnonKey, encryptedSession: '', steamRegion: 'ru' }
   let session = null
   const steamDetailsCache = new Map()
-  let featuredCache = { ts: 0, data: null }
+  const featuredCacheByRegion = new Map()
   const CURATED_GAMES = [
     { steamAppId: 1086940, title: "Baldur's Gate 3" },
     { steamAppId: 1245620, title: 'ELDEN RING' },
@@ -61,6 +67,7 @@ function createCloud(configPath, safeStorage, options = {}) {
       config.url = typeof parsed.url === 'string' && parsed.url ? parsed.url : defaultUrl
       config.anonKey = typeof parsed.anonKey === 'string' && parsed.anonKey ? parsed.anonKey : defaultAnonKey
       config.encryptedSession = typeof parsed.encryptedSession === 'string' ? parsed.encryptedSession : ''
+      config.steamRegion = normalizeRegion(parsed.steamRegion || 'ru')
       if (config.encryptedSession && safeStorage && safeStorage.isEncryptionAvailable()) {
         try {
           const bytes = Buffer.from(config.encryptedSession, 'base64')
@@ -79,7 +86,8 @@ function createCloud(configPath, safeStorage, options = {}) {
     const snapshot = {
       url: config.url,
       anonKey: config.anonKey,
-      encryptedSession: config.encryptedSession
+      encryptedSession: config.encryptedSession,
+      steamRegion: normalizeRegion(config.steamRegion)
     }
     writeQueue = writeQueue.then(async () => {
       await fs.mkdir(path.dirname(configPath), { recursive: true })
@@ -326,30 +334,55 @@ function createCloud(configPath, safeStorage, options = {}) {
       if (!/^[a-z0-9_]{3,24}$/.test(safeHandle)) throw new Error('Некорректное имя профиля.')
       const rows = await rest('profiles?select=' + PROFILE_FIELDS + '&handle=eq.' + encodeURIComponent(safeHandle) + '&limit=1')
       if (!Array.isArray(rows) || !rows.length) return null
-      const reviews = await rest('reviews?select=id,game_id,genre_id,score,coverage,review_title,verdict,pros,cons,criterion_ratings,updated_at,game:games(id,steam_app_id,title,slug,header_image,release_date)&profile_id=eq.' + encodeURIComponent(rows[0].id) + '&is_public=eq.true&order=updated_at.desc&limit=100')
+      const reviews = await rest('reviews?select=id,game_id,genre_id,score,coverage,review_title,verdict,pros,cons,criterion_ratings,moderation_status,updated_at,game:games(id,steam_app_id,title,slug,header_image,release_date)&profile_id=eq.' + encodeURIComponent(rows[0].id) + '&is_public=eq.true&moderation_status=eq.approved&order=updated_at.desc&limit=100')
       return { profile: rows[0], reviews: Array.isArray(reviews) ? reviews : [] }
     },
 
-    async searchSteam(term) {
+    async getSteamRegion() {
+      await load()
+      return normalizeRegion(config.steamRegion)
+    },
+
+    async setSteamRegion(cc) {
+      await load()
+      config.steamRegion = normalizeRegion(cc)
+      await persist()
+      return config.steamRegion
+    },
+
+    async searchSteam(term, ccOverride) {
+      await load()
+      const targetCc = normalizeRegion(ccOverride || config.steamRegion)
       const query = String(term || '').trim().slice(0, 100)
       if (query.length < 2) return []
-      const url = 'https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: 'kz' })
-      const result = await fetchJson(url)
-      const baseItems = (Array.isArray(result.items) ? result.items : []).slice(0, 16).map((item) => ({
+      const [regionalRes, fallbackRes] = await Promise.all([
+        fetchJson('https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: targetCc })).catch(() => ({ items: [] })),
+        targetCc === 'kz'
+          ? Promise.resolve({ items: [] })
+          : fetchJson('https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: 'kz' })).catch(() => ({ items: [] }))
+      ])
+      const regionalIds = new Set((Array.isArray(regionalRes.items) ? regionalRes.items : []).map((it) => Number(it.id)))
+      const mergedRaw = (Array.isArray(regionalRes.items) ? regionalRes.items : []).concat(
+        (Array.isArray(fallbackRes.items) ? fallbackRes.items : []).filter((it) => !regionalIds.has(Number(it.id))).map((it) => Object.assign({}, it, { _unavailableInRegion: true }))
+      )
+      const baseItems = mergedRaw.slice(0, 16).map((item) => ({
         steamAppId: Number(item.id),
         title: String(item.name || ''),
         image: String(item.tiny_image || ''),
         headerImage: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + Number(item.id) + '/header.jpg',
-        price: item.price?.final ? item.price.final / 100 : null,
-        currency: item.price?.currency || 'RUB',
+        price: item._unavailableInRegion ? null : (item.price?.final ? item.price.final / 100 : null),
+        priceText: '',
+        regionAvailable: !item._unavailableInRegion,
+        currency: item.price?.currency || '',
         storeUrl: 'https://store.steampowered.com/app/' + Number(item.id) + '/'
       })).filter((item) => Number.isSafeInteger(item.steamAppId) && item.steamAppId > 0)
-      return await this.enrichSteamList(baseItems, 6)
+      return await this.enrichSteamList(baseItems, targetCc)
     },
 
-    async enrichSteamList(items, maxEnrich = 4) {
+    async enrichSteamList(items, targetCc) {
+      const cc = normalizeRegion(targetCc || config.steamRegion)
       return items.map((item) => {
-        const cached = steamDetailsCache.get(item.steamAppId)
+        const cached = steamDetailsCache.get(item.steamAppId + ':' + cc)
         if (cached && Date.now() - cached.ts < 600000) {
           return { ...item, ...cached.data, image: cached.data.headerImage || item.headerImage || item.image }
         }
@@ -357,19 +390,21 @@ function createCloud(configPath, safeStorage, options = {}) {
       })
     },
 
-    async steamFeatured(section = 'featured') {
+    async steamFeatured(section = 'featured', ccOverride) {
+      await load()
+      const targetCc = normalizeRegion(ccOverride || config.steamRegion)
       const nowMs = Date.now()
-      if (!featuredCache.data || nowMs - featuredCache.ts > 300000) {
+      let cachedFc = featuredCacheByRegion.get(targetCc)
+      if (!cachedFc || nowMs - cachedFc.ts > 300000) {
         try {
-          featuredCache = {
-            ts: nowMs,
-            data: await fetchJson('https://store.steampowered.com/api/featuredcategories/?l=russian&cc=kz')
-          }
+          const data = await fetchJson('https://store.steampowered.com/api/featuredcategories/?' + new URLSearchParams({ l: 'russian', cc: targetCc }))
+          cachedFc = { ts: nowMs, data }
+          featuredCacheByRegion.set(targetCc, cachedFc)
         } catch {
-          featuredCache = { ts: nowMs, data: {} }
+          cachedFc = { ts: nowMs, data: {} }
         }
       }
-      const fc = featuredCache.data || {}
+      const fc = cachedFc.data || {}
       const pick = (key) => (Array.isArray(fc[key]?.items) ? fc[key].items : [])
         .filter((it) => it && Number(it.type || 0) === 0 && Number.isSafeInteger(Number(it.id)) && Number(it.id) > 0)
         .map((it) => ({
@@ -378,8 +413,10 @@ function createCloud(configPath, safeStorage, options = {}) {
           image: String(it.header_image || it.large_capsule_image || it.small_capsule_image || ''),
           headerImage: String(it.header_image || it.large_capsule_image || ''),
           price: it.final_price ? it.final_price / 100 : null,
+          priceText: '',
+          regionAvailable: true,
           discountPercent: Number(it.discount_percent) || 0,
-          currency: it.currency || 'RUB',
+          currency: it.currency || '',
           storeUrl: 'https://store.steampowered.com/app/' + Number(it.id) + '/'
         }))
 
@@ -422,33 +459,55 @@ function createCloud(configPath, safeStorage, options = {}) {
           return true
         })
       }
-      const enriched = await this.enrichSteamList(list.slice(0, 14), 6)
+      const enriched = await this.enrichSteamList(list.slice(0, 14), targetCc)
       return enriched.filter((it) => it.title)
     },
 
-    async steamDetails(steamAppId) {
+    async steamDetails(steamAppId, ccOverride) {
+      await load()
       const id = Number(steamAppId)
       if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Некорректный Steam App ID.')
-      const cached = steamDetailsCache.get(id)
+      const targetCc = normalizeRegion(ccOverride || config.steamRegion)
+      const cacheKey = id + ':' + targetCc
+      const cached = steamDetailsCache.get(cacheKey)
       if (cached && Date.now() - cached.ts < 600000) return cached.data
 
-      let entry = null
-      for (const cc of ['kz', 'us', 'ru']) {
-        try {
-          const url = 'https://store.steampowered.com/api/appdetails/?' + new URLSearchParams({ appids: String(id), l: 'russian', cc })
-          const result = await fetchJson(url)
-          if (result && result[String(id)]?.success && result[String(id)]?.data) {
-            entry = result[String(id)]
-            break
-          }
-        } catch {
-          /* try next region */
+      let regionalEntry = null
+      try {
+        const regionalUrl = 'https://store.steampowered.com/api/appdetails/?' + new URLSearchParams({ appids: String(id), l: 'russian', cc: targetCc })
+        const regionalRes = await fetchJson(regionalUrl)
+        if (regionalRes && regionalRes[String(id)]?.success && regionalRes[String(id)]?.data) {
+          regionalEntry = regionalRes[String(id)]
+        }
+      } catch { /* ignore */ }
+
+      let entry = regionalEntry
+      const regionAvailable = !!regionalEntry
+      if (!entry) {
+        for (const fallbackCc of ['kz', 'us']) {
+          if (fallbackCc === targetCc) continue
+          try {
+            const url = 'https://store.steampowered.com/api/appdetails/?' + new URLSearchParams({ appids: String(id), l: 'russian', cc: fallbackCc })
+            const result = await fetchJson(url)
+            if (result && result[String(id)]?.success && result[String(id)]?.data) {
+              entry = result[String(id)]
+              break
+            }
+          } catch { /* try next */ }
         }
       }
+
       if (!entry?.success || !entry.data) throw new Error('Steam не вернул данные для этой игры (App ID ' + id + ').')
       const game = entry.data
+      const regionalPriceText = regionAvailable
+        ? (game.is_free ? 'Бесплатно' : (game.price_overview?.final_formatted || ''))
+        : ''
+      const regionalDiscount = regionAvailable ? (Number(game.price_overview?.discount_percent) || 0) : 0
+
       const data = {
         steamAppId: id,
+        region: targetCc,
+        regionAvailable,
         title: String(game.name || ''),
         description: String(game.short_description || ''),
         aboutText: cleanSteamHtmlToText(game.about_the_game || game.detailed_description || ''),
@@ -473,15 +532,15 @@ function createCloud(configPath, safeStorage, options = {}) {
         website: typeof game.website === 'string' ? game.website : '',
         platforms: game.platforms ? Object.entries(game.platforms).filter(([, enabled]) => enabled).map(([name]) => name) : [],
         headerImage: String(game.header_image || ''),
-        isFree: !!game.is_free,
-        priceText: game.is_free ? 'Бесплатно' : (game.price_overview?.final_formatted || ''),
-        discountPercent: Number(game.price_overview?.discount_percent) || 0,
+        isFree: regionAvailable ? !!game.is_free : false,
+        priceText: regionalPriceText,
+        discountPercent: regionalDiscount,
         storeUrl: 'https://store.steampowered.com/app/' + id + '/',
         metacritic: game.metacritic ? { score: Number(game.metacritic.score) || null, url: String(game.metacritic.url || '') } : null,
         steamRecommendationCount: Number(game.recommendations?.total) || 0,
         steamUserScore: null
       }
-      steamDetailsCache.set(id, { ts: Date.now(), data })
+      steamDetailsCache.set(cacheKey, { ts: Date.now(), data })
       return data
     },
 
@@ -523,7 +582,7 @@ function createCloud(configPath, safeStorage, options = {}) {
       const [scores, summary, reviews] = await Promise.all([
         rest('external_ratings?select=source,score,max_score,vote_count,url,fetched_at&game_id=eq.' + encodeURIComponent(game.id) + '&order=source.asc'),
         rest('game_rating_summary?select=genre_id,review_count,average_score,average_coverage&game_id=eq.' + encodeURIComponent(game.id) + '&order=review_count.desc'),
-        rest('reviews?select=id,profile_id,genre_id,score,coverage,review_title,verdict,pros,cons,criterion_ratings,updated_at,profile:profiles(handle,display_name,avatar,badges)&game_id=eq.' + encodeURIComponent(game.id) + '&is_public=eq.true&order=updated_at.desc&limit=50')
+        rest('reviews?select=id,profile_id,genre_id,score,coverage,review_title,verdict,pros,cons,criterion_ratings,moderation_status,moderation_reasons,updated_at,profile:profiles(handle,display_name,avatar,badges)&game_id=eq.' + encodeURIComponent(game.id) + '&is_public=eq.true&moderation_status=eq.approved&order=updated_at.desc&limit=50')
       ])
       return {
         game,
@@ -545,7 +604,7 @@ function createCloud(configPath, safeStorage, options = {}) {
       const gameIds = games.map((g) => g.id)
       const inList = '(' + gameIds.map((id) => '"' + String(id).replace(/"/g, '') + '"').join(',') + ')'
       const [reviews] = await Promise.all([
-        rest('reviews?select=id,game_id,profile_id,genre_id,score,coverage,verdict,pros,cons,criterion_ratings,updated_at,profile:profiles(handle,display_name,avatar,badges)&game_id=in.' + inList + '&is_public=eq.true&order=updated_at.desc&limit=100')
+        rest('reviews?select=id,game_id,profile_id,genre_id,score,coverage,verdict,pros,cons,criterion_ratings,moderation_status,updated_at,profile:profiles(handle,display_name,avatar,badges)&game_id=in.' + inList + '&is_public=eq.true&moderation_status=eq.approved&order=updated_at.desc&limit=100')
       ])
       const byGameId = new Map(games.map((g) => [g.id, g.steam_app_id]))
       const out = {}
@@ -605,6 +664,8 @@ function createCloud(configPath, safeStorage, options = {}) {
       const score = Number(input.score)
       const coverage = Number(input.coverage)
       if (!Number.isFinite(score) || score < 0 || score > 100) throw new Error('Оценка должна быть от 0 до 100.')
+      const modStatus = input.moderationStatus === 'pending' ? 'pending' : 'approved'
+      const modReasons = Array.isArray(input.moderationReasons) ? input.moderationReasons.map((r) => String(r).slice(0, 140)).slice(0, 12) : []
       const payload = {
         profile_id: session.user.id,
         game_id: gameId,
@@ -618,7 +679,9 @@ function createCloud(configPath, safeStorage, options = {}) {
         pros: String(input.pros || '').slice(0, 8000),
         cons: String(input.cons || '').slice(0, 8000),
         criterion_ratings: input.criterionRatings && typeof input.criterionRatings === 'object' ? input.criterionRatings : {},
-        is_public: input.isPublic !== false
+        moderation_status: modStatus,
+        moderation_reasons: modReasons,
+        is_public: modStatus === 'approved' && input.isPublic !== false
       }
       const rows = await rest('reviews?on_conflict=profile_id,game_id&select=*', {
         method: 'POST',
@@ -626,6 +689,23 @@ function createCloud(configPath, safeStorage, options = {}) {
         body: JSON.stringify(payload)
       })
       return Array.isArray(rows) ? rows[0] || null : null
+    },
+
+    async listModerationQueue() {
+      await ensureSession()
+      const rows = await rest('reviews?select=id,profile_id,game_id,genre_id,score,coverage,verdict,pros,cons,criterion_ratings,moderation_status,moderation_reasons,updated_at,profile:profiles(handle,display_name,avatar,badges),game:games(id,steam_app_id,title,header_image)&moderation_status=eq.pending&order=updated_at.desc&limit=60')
+      return Array.isArray(rows) ? rows : []
+    },
+
+    async moderateReview(reviewId, action) {
+      await ensureSession()
+      return await rest('rpc/developer_moderate_review', {
+        method: 'POST',
+        body: JSON.stringify({
+          target_review_id: String(reviewId || '').trim(),
+          action: String(action || '').trim()
+        })
+      })
     },
 
     async listAppPatches() {

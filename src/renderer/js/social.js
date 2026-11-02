@@ -8,9 +8,34 @@ window.K = window.K || {};
   const api = window.krit
   let catalogSearch = ''
   let catalogSection = 'featured'
+  let catalogRegion = 'ru'
   let profileSearch = ''
   let accountMode = 'signin'
   let searchTimer = null
+
+  const REGION_OPTIONS = [
+    ['ru', '₽ RUB · Россия'],
+    ['kz', '₸ KZT · Казахстан'],
+    ['us', '$ USD · США'],
+    ['de', '€ EUR · Германия'],
+    ['ua', '₴ UAH · Украина']
+  ]
+  const CURRENCY_SIGNS = { RUB: '₽', KZT: '₸', USD: '$', EUR: '€', UAH: '₴' }
+
+  function regionLabel(code) {
+    const found = REGION_OPTIONS.find(([id]) => id === code)
+    return found ? found[1] : '₽ RUB · Россия'
+  }
+
+  function formatPrice(value, currency) {
+    const num = Number(value)
+    if (!Number.isFinite(num)) return ''
+    const code = String(currency || 'RUB').toUpperCase()
+    const sign = CURRENCY_SIGNS[code] || code
+    const amount = num >= 100 ? Math.round(num) : Math.round(num * 100) / 100
+    const formatted = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: amount % 1 ? 2 : 0 }).format(amount)
+    return code === 'USD' || code === 'EUR' ? sign + formatted : formatted + ' ' + sign
+  }
 
   function shell(html) {
     return '<div class="view-inner">' + html + '</div>'
@@ -281,7 +306,10 @@ window.K = window.K || {};
       '<div class="card pad">' + cardTitle('Моя роль', 'Права разработчика назначает только владелец проекта Supabase.') +
       (isDeveloper ? '<p class="small muted">У вас есть права управлять общим каталогом, внешними оценками, публичными отзывами и официальными патчами.</p>' : '<p class="small muted">Сейчас у вас права участника: можно оценивать игры и управлять своим профилем. Изменять общие данные и патчи нельзя.</p>' +
         '<button class="btn ghost sm" id="cloud-download-developer-sql" style="margin-top:12px">Скачать SQL для аккаунта разработчика</button>') +
-      '</div></div></div>'
+      '</div></div></div>' +
+      (isDeveloper ? '<div class="card pad" id="moderation-card" style="margin-top:16px">' +
+        cardTitle('Очередь модерации', 'Сюда автоматически попадают подозрительные рецензии: мат, спам и противоречивые оценки.') +
+        '<div id="moderation-list"><div class="small muted">Загружаем очередь…</div></div></div>' : '')
     view.innerHTML = shell(html)
     U.$('#cloud-signout', view).addEventListener('click', async () => {
       await api.cloud.signOut()
@@ -317,6 +345,60 @@ window.K = window.K || {};
         button.disabled = false
       }
     })
+    if (isDeveloper) loadModerationQueue(view)
+  }
+
+  async function loadModerationQueue(view) {
+    const box = U.$('#moderation-list', view)
+    if (!box) return
+    try {
+      const rows = await api.cloud.listModerationQueue()
+      if (!box.isConnected) return
+      if (!rows.length) {
+        box.innerHTML = '<div class="empty" style="padding:22px 10px"><h3>Очередь пуста</h3><p>Подозрительных рецензий сейчас нет — все публикации прошли автопроверку.</p></div>'
+        return
+      }
+      box.innerHTML = '<div class="mod-queue">' + rows.map((review) => {
+        const profile = review.profile || {}
+        const game = review.game || {}
+        const reasons = Array.isArray(review.moderation_reasons) ? review.moderation_reasons : []
+        return '<div class="mod-queue-item" data-mod-id="' + U.attr(review.id) + '">' +
+          '<div class="row wrap" style="gap:10px;align-items:center">' +
+            '<span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
+            '<div class="grow"><div class="row wrap" style="gap:7px"><b>' + U.esc(profile.display_name || profile.handle || 'Участник') + '</b>' +
+              (game.title ? '<span class="tiny dim">· ' + U.esc(game.title) + '</span>' : '') + '</div>' +
+              '<div class="tiny dim">@' + U.esc(profile.handle || '') + ' · ' + U.esc(U.formatDate(review.updated_at)) + '</div></div>' +
+            '<b class="mono" style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</b>' +
+          '</div>' +
+          (reasons.length ? '<div class="mod-queue-reasons">' + reasons.map((r) => '<span class="tiny">• ' + U.esc(r) + '</span>').join('') + '</div>' : '') +
+          ((review.verdict || review.pros || review.cons) ? '<div class="mod-queue-text">' + U.esc([review.verdict, review.pros, review.cons].filter(Boolean).join(' ')).slice(0, 420) + '</div>' : '') +
+          '<div class="row wrap" style="gap:8px;margin-top:9px">' +
+            '<button class="btn sm primary" data-mod-action="approve">Одобрить</button>' +
+            '<button class="btn sm" data-mod-action="reject">Отклонить</button>' +
+            (game.steam_app_id ? '<button class="btn ghost sm" data-route="#/steam/' + Number(game.steam_app_id) + '">Страница игры</button>' : '') +
+          '</div></div>'
+      }).join('') + '</div>'
+      U.$$('[data-mod-action]', box).forEach((btn) => btn.addEventListener('click', async (event) => {
+        event.stopPropagation()
+        const item = btn.closest('[data-mod-id]')
+        const id = item?.dataset.modId
+        if (!id) return
+        const action = btn.dataset.modAction
+        U.$$('[data-mod-action]', item).forEach((b) => { b.disabled = true })
+        btn.textContent = action === 'approve' ? 'Одобряем…' : 'Отклоняем…'
+        try {
+          await api.cloud.moderateReview(id, action)
+          U.toast(action === 'approve' ? 'Рецензия одобрена и опубликована' : 'Рецензия отклонена', 'good')
+          loadModerationQueue(view)
+        } catch (err) {
+          U.toast(err.message || 'Не удалось выполнить действие', 'bad')
+          U.$$('[data-mod-action]', item).forEach((b) => { b.disabled = false })
+          btn.textContent = action === 'approve' ? 'Одобрить' : 'Отклонить'
+        }
+      }))
+    } catch (err) {
+      if (box.isConnected) box.innerHTML = '<div class="empty" style="padding:20px"><h3>Не удалось загрузить очередь</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
+    }
   }
 
   /* ---------- Steam catalog ---------- */
@@ -347,6 +429,10 @@ window.K = window.K || {};
       '<input id="steam-search" type="text" maxlength="100" placeholder="Найти любую игру в Steam…" value="' + U.attr(catalogSearch) + '"></label>' +
       '<button class="btn primary" id="steam-search-button">Найти в Steam</button>' +
       (catalogSearch ? '<button class="btn ghost sm" id="steam-clear-button">Сбросить поиск</button>' : '') +
+      '<label class="region-picker" title="Регион и валюта цен Steam">' + U.icon('globe', 14) +
+      '<select id="steam-region">' + REGION_OPTIONS.map(([code, label]) =>
+        '<option value="' + code + '"' + (catalogRegion === code ? ' selected' : '') + '>' + U.esc(label) + '</option>'
+      ).join('') + '</select></label>' +
       '<span class="spacer"></span><span id="steam-result-count" class="tiny dim"></span></div>' +
       '<div class="row wrap" style="gap:8px;margin-bottom:12px">' +
       '<div class="tabs" id="steam-sections">' +
@@ -390,8 +476,21 @@ window.K = window.K || {};
       catalogSearch = btn.dataset.quickTag
       renderCatalog(view)
     }))
+    U.$('#steam-region', view)?.addEventListener('change', async (event) => {
+      catalogRegion = event.target.value
+      try { await api.cloud.setSteamRegion(catalogRegion) } catch { /* keep local choice */ }
+      loadCatalogResults(view)
+    })
 
-    loadCatalogResults(view)
+    api.cloud.getSteamRegion().then((region) => {
+      if (!view.isConnected) return
+      if (region && region !== catalogRegion) {
+        catalogRegion = region
+        const select = U.$('#steam-region', view)
+        if (select) select.value = region
+      }
+      loadCatalogResults(view)
+    }).catch(() => loadCatalogResults(view))
   }
 
   async function loadCatalogResults(view) {
@@ -399,25 +498,26 @@ window.K = window.K || {};
     const count = U.$('#steam-result-count', view)
     if (!target) return
     target.innerHTML = '<div class="card pad small muted">Загружаем игры, жанры, теги и скриншоты из Steam…</div>'
+    const requestRegion = catalogRegion
     try {
       const results = catalogSearch.length >= 2
-        ? await api.cloud.steamSearch(catalogSearch)
-        : await api.cloud.steamFeatured(catalogSection)
+        ? await api.cloud.steamSearch(catalogSearch, requestRegion)
+        : await api.cloud.steamFeatured(catalogSection, requestRegion)
       const commMap = await api.cloud.communityBySteamIds(results.map((r) => r.steamAppId)).catch(() => ({}))
       results.forEach((r) => {
         if (commMap && commMap[r.steamAppId]) r.community = commMap[r.steamAppId]
       })
-      if (!target.isConnected || location.hash !== '#/catalog') return
-      if (count) count.textContent = results.length + ' ' + U.plural(results.length, 'игра', 'игры', 'игр')
+      if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion) return
+      if (count) count.textContent = results.length + ' ' + U.plural(results.length, 'игра', 'игры', 'игр') + ' · ' + regionLabel(requestRegion)
       target.innerHTML = results.length
         ? '<div class="steam-catalog-grid">' + results.map((game) => steamResultCard(game)).join('') + '</div>'
         : '<div class="empty"><h3>Игры не найдены</h3><p>Попробуйте другое название или выберите подборку выше.</p></div>'
       bindCatalogScreenshots(target)
       bindReviewInspectors(target, results)
       results.forEach((game) => {
-        if (Array.isArray(game.genres) && game.genres.length) return
-        api.cloud.steamDetails(game.steamAppId).then((details) => {
-          if (!target.isConnected || location.hash !== '#/catalog') return
+        if (game.priceText || game.regionAvailable === false || game.isFree) return
+        api.cloud.steamDetails(game.steamAppId, requestRegion).then((details) => {
+          if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion) return
           const cardEl = U.$('[data-steam-card="' + game.steamAppId + '"]', target)
           if (!cardEl) return
           const merged = Object.assign({}, game, details, { community: game.community })
@@ -445,7 +545,10 @@ window.K = window.K || {};
     const comm = game.community || null
     const commReviews = Array.isArray(comm?.reviews) ? comm.reviews.slice(0, 3) : []
     const dev = Array.isArray(game.developers) && game.developers.length ? game.developers[0] : ''
-    const priceLabel = game.priceText || (game.price ? U.formatNumber(game.price, 0) + ' ₽' : '')
+    const priceLabel = game.priceText || (game.regionAvailable === false
+      ? 'Нет в регионе'
+      : game.price != null ? formatPrice(game.price, game.currency) : '')
+    const priceUnavailable = !game.priceText && game.regionAvailable === false
 
     return '<article class="card steam-catalog-card" data-steam-card="' + game.steamAppId + '" data-route="#/steam/' + game.steamAppId + '" style="cursor:pointer">' +
       '<div class="steam-card-media">' +
@@ -454,7 +557,7 @@ window.K = window.K || {};
           (comm?.count > 0 ? '<span class="ach-pill" title="Средняя оценка участников Критериума">★ Критериум ' + U.formatNumber(comm.average) + ' (' + comm.count + ')</span>' : '') +
           (metaScore ? '<span class="chip good" title="Оценка Metacritic">MC ' + metaScore + '</span>' : '') +
           (game.discountPercent > 0 ? '<span class="chip accent">−' + game.discountPercent + '%</span>' : '') +
-          (priceLabel ? '<span class="chip">' + U.esc(priceLabel) + '</span>' : '') +
+          (priceLabel ? '<span class="chip' + (priceUnavailable ? ' bad' : '') + '" title="' + U.attr(priceUnavailable ? 'Игра недоступна в выбранном регионе Steam' : 'Цена в Steam, регион ' + catalogRegion) + '">' + U.esc(priceLabel) + '</span>' : '') +
         '</div>' +
       '</div>' +
       '<div class="steam-card-body">' +
@@ -628,7 +731,7 @@ window.K = window.K || {};
 
     html += '<div class="card steam-hero">' + (heroImage ? '<img src="' + U.attr(heroImage) + '" alt="" class="steam-hero-image">' : '') +
       '<div class="steam-hero-content"><div class="eyebrow">Steam App ID ' + steam.steamAppId + (steam.releaseDate ? ' · ' + U.esc(steam.releaseDate) : '') +
-      (steam.priceText ? ' · ' + U.esc(steam.priceText) : '') + '</div>' +
+      (steam.priceText ? ' · ' + U.esc(steam.priceText) : steam.regionAvailable === false ? ' · нет в продаже в регионе ' + U.esc(String(steam.region || '').toUpperCase()) : '') + '</div>' +
       '<h1>' + U.esc(steam.title) + '</h1><p>' + U.esc(steam.description || 'Описание пока не добавлено.') + '</p>' +
       '<div class="row wrap" style="margin-top:12px">' +
       (steam.genres || []).map((g) => '<span class="chip accent">' + U.esc(g) + '</span>').join('') +
@@ -693,7 +796,7 @@ window.K = window.K || {};
       '<br><b>Издатель:</b> ' + U.esc((steam.publishers || []).join(', ') || 'не указан') +
       '<br><b>Платформы:</b> ' + U.esc((steam.platforms || []).join(' · ') || 'не указаны') +
       (steam.releaseDate ? '<br><b>Дата выхода:</b> ' + U.esc(steam.releaseDate) : '') +
-      (steam.priceText ? '<br><b>Цена в Steam:</b> ' + U.esc(steam.priceText) : '') +
+      (steam.priceText ? '<br><b>Цена в Steam:</b> ' + U.esc(steam.priceText) : steam.regionAvailable === false ? '<br><b>Цена в Steam:</b> <span class="dim">не продаётся в выбранном регионе</span>' : '') +
       '</div>' +
       (steam.genres?.length ? '<div class="divider"></div><div class="tiny dim" style="margin-bottom:6px">ЖАНРЫ</div><div class="row wrap" style="gap:5px">' +
         steam.genres.map((g) => '<span class="chip accent">' + U.esc(g) + '</span>').join('') + '</div>' : '') +

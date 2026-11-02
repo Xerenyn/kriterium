@@ -47,7 +47,46 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false
+      spellcheck: true
+    }
+  })
+
+  try {
+    mainWindow.webContents.session.setSpellCheckerLanguages(['ru', 'en-US'])
+  } catch { /* ignore if language pack unavailable */ }
+
+  mainWindow.webContents.on('context-menu', (_event, params) => {
+    if (!params.isEditable && !params.selectionText) return
+    const items = []
+    if (params.misspelledWord) {
+      if (Array.isArray(params.dictionarySuggestions) && params.dictionarySuggestions.length) {
+        for (const suggestion of params.dictionarySuggestions.slice(0, 6)) {
+          items.push({
+            label: 'Исправить на «' + suggestion + '»',
+            click: () => mainWindow.webContents.replaceMisspelling(suggestion)
+          })
+        }
+      } else {
+        items.push({ label: 'Нет вариантов замены', enabled: false })
+      }
+      items.push({
+        label: 'Добавить «' + params.misspelledWord + '» в словарь',
+        click: () => mainWindow.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord)
+      })
+      items.push({ type: 'separator' })
+    }
+    if (params.isEditable) {
+      items.push(
+        { label: 'Вырезать', role: 'cut', enabled: params.editFlags.canCut },
+        { label: 'Копировать', role: 'copy', enabled: params.editFlags.canCopy },
+        { label: 'Вставить', role: 'paste', enabled: params.editFlags.canPaste },
+        { label: 'Выделить всё', role: 'selectAll' }
+      )
+    } else if (params.selectionText) {
+      items.push({ label: 'Копировать', role: 'copy' })
+    }
+    if (items.length) {
+      Menu.buildFromTemplate(items).popup({ window: mainWindow })
     }
   })
 
@@ -157,15 +196,19 @@ function registerIpc() {
   ipcMain.handle('cloud:updateMyProfile', (_e, input) => cloud.updateMyProfile(input))
   ipcMain.handle('cloud:listProfiles', (_e, query) => cloud.listPublicProfiles(query))
   ipcMain.handle('cloud:publicProfile', (_e, handle) => cloud.publicProfile(handle))
-  ipcMain.handle('cloud:steamSearch', (_e, query) => cloud.searchSteam(query))
-  ipcMain.handle('cloud:steamFeatured', (_e, section) => cloud.steamFeatured(section))
-  ipcMain.handle('cloud:steamDetails', (_e, steamAppId) => cloud.steamDetails(steamAppId))
+  ipcMain.handle('cloud:steamSearch', (_e, query, cc) => cloud.searchSteam(query, cc))
+  ipcMain.handle('cloud:steamFeatured', (_e, section, cc) => cloud.steamFeatured(section, cc))
+  ipcMain.handle('cloud:steamDetails', (_e, steamAppId, cc) => cloud.steamDetails(steamAppId, cc))
+  ipcMain.handle('cloud:getSteamRegion', () => cloud.getSteamRegion())
+  ipcMain.handle('cloud:setSteamRegion', (_e, cc) => cloud.setSteamRegion(cc))
   ipcMain.handle('cloud:steamReviews', (_e, steamAppId) => cloud.steamReviews(steamAppId))
   ipcMain.handle('cloud:publicGameSearch', (_e, query) => cloud.publicGameSearch(query))
   ipcMain.handle('cloud:publicGame', (_e, id) => cloud.publicGame(id))
   ipcMain.handle('cloud:communityBySteamIds', (_e, ids) => cloud.communityBySteamIds(ids))
   ipcMain.handle('cloud:addSteamGame', (_e, steamAppId) => cloud.addSteamGame(steamAppId))
   ipcMain.handle('cloud:saveReview', (_e, review) => cloud.saveReview(review))
+  ipcMain.handle('cloud:listModerationQueue', () => cloud.listModerationQueue())
+  ipcMain.handle('cloud:moderateReview', (_e, id, action) => cloud.moderateReview(id, action))
   ipcMain.handle('cloud:listAppPatches', () => cloud.listAppPatches())
   ipcMain.handle('cloud:publishAppPatch', (_e, patch) => cloud.publishAppPatch(patch))
   ipcMain.handle('cloud:toggleAppPatch', (_e, id, enabled) => cloud.toggleAppPatch(id, enabled))
