@@ -30,6 +30,26 @@ function normalizeBaseUrl(value, allowLocal) {
 
 const VALID_REGIONS = ['ru', 'kz', 'us', 'de', 'ua']
 const REGION_CURRENCY = { ru: 'RUB', kz: 'KZT', us: 'USD', de: 'EUR', ua: 'UAH' }
+const STEAM_TAG_LABELS = {
+  19: 'Экшен', 21: 'Приключение', 122: 'Ролевая игра', 9: 'Стратегия',
+  597: 'Казуальная', 599: 'Симулятор', 492: 'Инди', 113: 'Бесплатно',
+  128: 'ММО', 699: 'Гонки', 701: 'Спорт', 1667: 'Хоррор',
+  3978: 'Хоррор на выживание', 1662: 'Выживание', 1695: 'Открытый мир',
+  3859: 'Мультиплеер', 4182: 'Одиночная', 1685: 'Кооператив',
+  3843: 'Сетевой кооператив', 1774: 'Шутер', 1663: 'Шутер от 1-го лица',
+  3839: 'От 1-го лица', 1697: 'От 3-го лица', 1742: 'Глубокий сюжет',
+  4166: 'Атмосферная', 1716: 'Рогалик', 3959: 'Рогалайт',
+  1628: 'Метроидвания', 29482: 'Соулслайк', 1677: 'Пошаговая',
+  14139: 'Пошаговая тактика', 1676: 'RTS', 1718: 'MOBA',
+  1775: 'PvP', 6730: 'PvE', 1643: 'Строительство', 7332: 'Строительство базы',
+  1702: 'Крафтинг', 3834: 'Исследования', 1664: 'Головоломка',
+  1625: 'Платформер', 3871: '2D', 4191: '3D', 3964: 'Пиксельная графика',
+  4085: 'Аниме', 1756: 'Саундтрек', 4136: 'Юмор', 4342: 'Тёмное фэнтези',
+  1684: 'Фэнтези', 3942: 'Научная фантастика', 1755: 'Космос',
+  3835: 'Постапокалипсис', 1659: 'Зомби', 1687: 'Стелс', 4026: 'Сложная',
+  1646: 'Слэшер', 3799: 'Визуальная новелла', 4328: 'Градостроитель',
+  1666: 'Карточная', 791774: 'Карточный баттлер'
+}
 function normalizeRegion(cc) {
   const v = String(cc || '').trim().toLowerCase()
   return VALID_REGIONS.includes(v) ? v : 'ru'
@@ -866,6 +886,12 @@ function parseSteamSearchRows(html, cc) {
     ).split('\n').map((s) => s.trim()).filter(Boolean).pop() || ''
     const priceText = isFree ? 'Бесплатно' : (discountedText || plainText)
     const releaseDate = cleanSteamHtmlToText((chunk.match(/search_released[^>]*>([\s\S]*?)<\/div>/) || [])[1] || '')
+    const tagIdsRaw = (chunk.match(/data-ds-tagids="\[([0-9,\s]+)\]"/) || [])[1] || ''
+    const tags = tagIdsRaw
+      .split(',')
+      .map((id) => STEAM_TAG_LABELS[Number(id.trim())])
+      .filter(Boolean)
+      .slice(0, 4)
 
     seen.add(appId)
     items.push({
@@ -878,7 +904,7 @@ function parseSteamSearchRows(html, cc) {
       developers: [],
       publishers: [],
       genres: [],
-      tags: [],
+      tags,
       screenshots: [],
       platforms: [],
       supportedLanguages: '',
@@ -919,7 +945,8 @@ async function hydrateSteamBrowseItems(items) {
     if (!entry) continue
     const assets = entry.assets || {}
     const fmt = String(assets.asset_url_format || '')
-    const bestFile = assets.header_2x || assets.header || assets.main_capsule_2x || assets.main_capsule || assets.small_capsule_2x || ''
+    // header.jpg (460x215) чётко закрывает карточку 360x162 и декодируется в 4 раза быстрее header_2x (920x430).
+    const bestFile = assets.header || assets.main_capsule || assets.header_2x || assets.small_capsule_2x || ''
     if (fmt && bestFile) {
       const hiRes = cdnBase + fmt.replace('${FILENAME}', bestFile)
       item.headerImage = hiRes
@@ -927,7 +954,7 @@ async function hydrateSteamBrowseItems(items) {
     }
     const basic = entry.basic_info || {}
     if (basic.short_description && !item.description) {
-      item.description = cleanSteamHtmlToText(basic.short_description).slice(0, 320)
+      item.description = cleanSteamHtmlToText(basic.short_description).slice(0, 260)
     }
     if (Array.isArray(basic.developers) && basic.developers.length && !item.developers.length) {
       item.developers = basic.developers.map((d) => String(d?.name || '').trim()).filter(Boolean)
@@ -942,13 +969,14 @@ async function hydrateSteamBrowseItems(items) {
     if (!item.screenshots.length && entry.screenshots) {
       const rawShots = (Array.isArray(entry.screenshots.all_ages_screenshots) ? entry.screenshots.all_ages_screenshots : [])
         .concat(Array.isArray(entry.screenshots.mature_content_screenshots) ? entry.screenshots.mature_content_screenshots : [])
-        .slice(0, 6)
+        .slice(0, 3)
       item.screenshots = rawShots
         .map((s, idx) => {
           const fn = String(s?.filename || '').trim()
           if (!fn) return null
           const full = /^https?:\/\//i.test(fn) ? fn : cdnBase + fn
-          return { id: idx, thumb: full, full }
+          const thumb = full.replace(/\.jpg(\?|$)/i, '.600x338.jpg$1')
+          return { id: idx, thumb, full }
         })
         .filter(Boolean)
     }

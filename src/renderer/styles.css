@@ -361,7 +361,9 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: border-color .16s, transform .16s, box-shadow .16s;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 390px;
+  transition: border-color .16s, transform .16s;
 }
 .steam-catalog-card:hover {
   border-color: #44413a;
@@ -394,8 +396,7 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
   flex-wrap: wrap;
 }
 .steam-card-badges .chip {
-  backdrop-filter: blur(8px);
-  background: rgba(14, 14, 15, 0.85);
+  background: rgba(14, 14, 15, 0.92);
 }
 .steam-card-body {
   padding: 15px 16px 16px;

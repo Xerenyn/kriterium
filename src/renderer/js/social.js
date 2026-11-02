@@ -786,15 +786,9 @@ window.K = window.K || {};
       }
       const grid = U.$('#steam-grid', target)
       if (grid && items.length) {
-        const fragment = document.createDocumentFragment()
-        const holder = document.createElement('div')
-        holder.innerHTML = items.map((game) => steamResultCard(game)).join('')
-        while (holder.firstElementChild) fragment.appendChild(holder.firstElementChild)
-        bindCatalogScreenshots(fragment)
-        bindReviewInspectors(fragment, items)
-        grid.appendChild(fragment)
-        if (isFirstPage) enrichFirstCatalogPage(target, items, requestRegion, token).catch(() => {})
+        await appendCatalogCardsChunked(grid, items, token)
       }
+      if (token !== catalogToken) return
       updateCatalogMore(view)
     } catch (err) {
       if (reset) {
@@ -814,37 +808,29 @@ window.K = window.K || {};
     }
   }
 
-  async function enrichFirstCatalogPage(target, items, requestRegion, token) {
-    // Первая страница получает расширенные карточки (жанры, теги, скриншоты).
-    // Дальше каталог листается бесконечно без лишних запросов к Steam.
-    const queue = items.slice(0, 12).filter((game) => !game.genres?.length || !game.priceText)
-    let cursor = 0
-    const worker = async () => {
-      while (cursor < queue.length) {
-        const game = queue[cursor++]
-        try {
-          const details = await api.cloud.steamDetails(game.steamAppId, requestRegion)
-          if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion || token !== catalogToken) return
-          const cardEl = U.$('[data-steam-card="' + game.steamAppId + '"]', target)
-          if (!cardEl) continue
-          const keepHiResCover = /_2x\.jpg/i.test(game.headerImage || '') ? game.headerImage : (details.headerImage || game.headerImage)
-          const merged = Object.assign({}, game, details, {
-            headerImage: keepHiResCover,
-            image: keepHiResCover,
-            community: game.community
-          })
-          const holder = document.createElement('div')
-          holder.innerHTML = steamResultCard(merged)
-          const fresh = holder.firstElementChild
-          if (fresh) {
-            bindCatalogScreenshots(fresh)
-            bindReviewInspectors(fresh, [merged])
-            cardEl.replaceWith(fresh)
-          }
-        } catch { /* compact card remains usable */ }
+  function appendCatalogCardsChunked(grid, items, token) {
+    const CHUNK = 8
+    let offset = 0
+    return new Promise((resolve) => {
+      const mountNext = () => {
+        if (!grid.isConnected || token !== catalogToken || offset >= items.length) {
+          resolve()
+          return
+        }
+        const slice = items.slice(offset, offset + CHUNK)
+        offset += CHUNK
+        const fragment = document.createDocumentFragment()
+        const holder = document.createElement('div')
+        holder.innerHTML = slice.map((game) => steamResultCard(game)).join('')
+        while (holder.firstElementChild) fragment.appendChild(holder.firstElementChild)
+        bindCatalogScreenshots(fragment)
+        bindReviewInspectors(fragment, slice)
+        grid.appendChild(fragment)
+        if (offset < items.length) requestAnimationFrame(mountNext)
+        else resolve()
       }
-    }
-    await Promise.all([worker(), worker(), worker(), worker()])
+      mountNext()
+    })
   }
 
   function updateCatalogMore(view) {
@@ -868,7 +854,7 @@ window.K = window.K || {};
             catalogObserver = null
             loadCatalogResults(view, { reset: false })
           }
-        }, { rootMargin: '700px 0px' })
+        }, { rootMargin: '300px 0px' })
         catalogObserver.observe(sentinel)
       }
     } else if (catalogGames.length) {
@@ -895,7 +881,7 @@ window.K = window.K || {};
 
     return '<article class="card steam-catalog-card" data-steam-card="' + game.steamAppId + '" data-route="#/steam/' + game.steamAppId + '" style="cursor:pointer">' +
       '<div class="steam-card-media">' +
-        (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy" class="steam-card-cover">' : '<div class="steam-placeholder">STEAM</div>') +
+        (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy" decoding="async" class="steam-card-cover">' : '<div class="steam-placeholder">STEAM</div>') +
         '<div class="steam-card-badges">' +
           (comm?.count > 0 ? '<span class="ach-pill" title="Средняя оценка участников Критериума">★ Критериум ' + U.formatNumber(comm.average) + ' (' + comm.count + ')</span>' : '') +
           (metaScore ? '<span class="chip good" title="Оценка Metacritic">MC ' + metaScore + '</span>' : '') +
@@ -914,7 +900,7 @@ window.K = window.K || {};
         (shots.length ? '<div class="steam-card-shots">' + shots.map((s, idx) => {
           const thumb = safeSteamImage(s.thumb)
           const full = safeSteamImage(s.full || s.thumb)
-          return thumb ? '<img src="' + U.attr(thumb) + '" data-shot-full="' + U.attr(full) + '" data-shot-title="' + U.attr(game.title + ' — скриншот ' + (idx + 1)) + '" alt="" loading="lazy" title="Нажмите, чтобы увеличить скриншот">' : ''
+          return thumb ? '<img src="' + U.attr(thumb) + '" data-shot-full="' + U.attr(full) + '" data-shot-title="' + U.attr(game.title + ' — скриншот ' + (idx + 1)) + '" alt="" loading="lazy" decoding="async" title="Нажмите, чтобы увеличить скриншот">' : ''
         }).join('') + '</div>' : '') +
         (commReviews.length ? '<div class="card-comm-reviews">' +
           '<div class="tiny dim" style="margin-bottom:4px">Оценки участников (' + comm.count + '):</div>' +
