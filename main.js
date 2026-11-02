@@ -162,6 +162,7 @@ function registerIpc() {
   ipcMain.handle('cloud:steamReviews', (_e, steamAppId) => cloud.steamReviews(steamAppId))
   ipcMain.handle('cloud:publicGameSearch', (_e, query) => cloud.publicGameSearch(query))
   ipcMain.handle('cloud:publicGame', (_e, id) => cloud.publicGame(id))
+  ipcMain.handle('cloud:communityBySteamIds', (_e, ids) => cloud.communityBySteamIds(ids))
   ipcMain.handle('cloud:addSteamGame', (_e, steamAppId) => cloud.addSteamGame(steamAppId))
   ipcMain.handle('cloud:saveReview', (_e, review) => cloud.saveReview(review))
   ipcMain.handle('cloud:listAppPatches', () => cloud.listAppPatches())

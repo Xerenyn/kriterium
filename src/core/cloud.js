@@ -377,6 +377,25 @@ function createCloud(configPath, safeStorage, options = {}) {
       else if (section === 'new_releases') list = pick('new_releases')
       else if (section === 'specials') list = pick('specials')
       else {
+        let sharedGames = []
+        if (configured()) {
+          try {
+            const rows = await rest('games?select=steam_app_id,title,header_image,store_url,description,genres,developers,release_date&order=updated_at.desc&limit=12')
+            if (Array.isArray(rows)) {
+              sharedGames = rows.map((r) => ({
+                steamAppId: Number(r.steam_app_id),
+                title: String(r.title || ''),
+                image: String(r.header_image || 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + Number(r.steam_app_id) + '/header.jpg'),
+                headerImage: String(r.header_image || 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + Number(r.steam_app_id) + '/header.jpg'),
+                description: String(r.description || ''),
+                genres: Array.isArray(r.genres) ? r.genres : [],
+                developers: Array.isArray(r.developers) ? r.developers : [],
+                releaseDate: String(r.release_date || ''),
+                storeUrl: String(r.store_url || 'https://store.steampowered.com/app/' + Number(r.steam_app_id) + '/')
+              })).filter((g) => g.steamAppId > 0 && g.title)
+            }
+          } catch { /* ignore */ }
+        }
         const curated = CURATED_GAMES.map((g) => ({
           steamAppId: g.steamAppId,
           title: g.title,
@@ -384,7 +403,7 @@ function createCloud(configPath, safeStorage, options = {}) {
           headerImage: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + g.steamAppId + '/header.jpg',
           storeUrl: 'https://store.steampowered.com/app/' + g.steamAppId + '/'
         }))
-        const merged = curated.concat(pick('top_sellers'), pick('specials'))
+        const merged = sharedGames.concat(curated, pick('top_sellers'), pick('specials'))
         const seen = new Set()
         list = merged.filter((it) => {
           if (seen.has(it.steamAppId)) return false
@@ -392,7 +411,7 @@ function createCloud(configPath, safeStorage, options = {}) {
           return true
         })
       }
-      const enriched = await this.enrichSteamList(list.slice(0, 12), 6)
+      const enriched = await this.enrichSteamList(list.slice(0, 14), 6)
       return enriched.filter((it) => it.title)
     },
 
@@ -501,6 +520,40 @@ function createCloud(configPath, safeStorage, options = {}) {
         community: Array.isArray(summary) ? summary : [],
         reviews: Array.isArray(reviews) ? reviews : []
       }
+    },
+
+    async communityBySteamIds(steamAppIds = []) {
+      await refreshSession()
+      if (!configured()) return {}
+      const ids = Array.from(new Set((Array.isArray(steamAppIds) ? steamAppIds : []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))).slice(0, 40)
+      const gameQuery = ids.length
+        ? 'games?select=id,steam_app_id,title&steam_app_id=in.(' + ids.join(',') + ')'
+        : 'games?select=id,steam_app_id,title&order=updated_at.desc&limit=20'
+      const games = await rest(gameQuery)
+      if (!Array.isArray(games) || !games.length) return {}
+      const gameIds = games.map((g) => g.id)
+      const inList = '(' + gameIds.map((id) => '"' + String(id).replace(/"/g, '') + '"').join(',') + ')'
+      const [reviews] = await Promise.all([
+        rest('reviews?select=id,game_id,profile_id,genre_id,score,coverage,verdict,pros,cons,criterion_ratings,updated_at,profile:profiles(handle,display_name,avatar,badges)&game_id=in.' + inList + '&is_public=eq.true&order=updated_at.desc&limit=100')
+      ])
+      const byGameId = new Map(games.map((g) => [g.id, g.steam_app_id]))
+      const out = {}
+      for (const g of games) {
+        out[g.steam_app_id] = { gameId: g.id, count: 0, average: null, reviews: [] }
+      }
+      for (const rev of Array.isArray(reviews) ? reviews : []) {
+        const appId = byGameId.get(rev.game_id)
+        if (!appId || !out[appId]) continue
+        out[appId].reviews.push(rev)
+      }
+      for (const item of Object.values(out)) {
+        item.count = item.reviews.length
+        if (item.count > 0) {
+          const sum = item.reviews.reduce((acc, r) => acc + (Number(r.score) || 0), 0)
+          item.average = Math.round((sum / item.count) * 10) / 10
+        }
+      }
+      return out
     },
 
     async addSteamGame(steamAppId) {

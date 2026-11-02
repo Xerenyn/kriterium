@@ -338,24 +338,31 @@ window.K = window.K || {};
       const results = catalogSearch.length >= 2
         ? await api.cloud.steamSearch(catalogSearch)
         : await api.cloud.steamFeatured(catalogSection)
+      const commMap = await api.cloud.communityBySteamIds(results.map((r) => r.steamAppId)).catch(() => ({}))
+      results.forEach((r) => {
+        if (commMap && commMap[r.steamAppId]) r.community = commMap[r.steamAppId]
+      })
       if (!target.isConnected || location.hash !== '#/catalog') return
       if (count) count.textContent = results.length + ' ' + U.plural(results.length, 'игра', 'игры', 'игр')
       target.innerHTML = results.length
         ? '<div class="steam-catalog-grid">' + results.map((game) => steamResultCard(game)).join('') + '</div>'
         : '<div class="empty"><h3>Игры не найдены</h3><p>Попробуйте другое название или выберите подборку выше.</p></div>'
       bindCatalogScreenshots(target)
+      bindReviewInspectors(target, results)
       results.forEach((game) => {
         if (Array.isArray(game.genres) && game.genres.length) return
         api.cloud.steamDetails(game.steamAppId).then((details) => {
           if (!target.isConnected || location.hash !== '#/catalog') return
           const cardEl = U.$('[data-steam-card="' + game.steamAppId + '"]', target)
           if (!cardEl) return
+          const merged = Object.assign({}, game, details, { community: game.community })
           const tmp = document.createElement('div')
-          tmp.innerHTML = steamResultCard(Object.assign({}, game, details))
+          tmp.innerHTML = steamResultCard(merged)
           const fresh = tmp.firstElementChild
           if (fresh) {
             cardEl.replaceWith(fresh)
             bindCatalogScreenshots(fresh)
+            bindReviewInspectors(fresh, [merged])
           }
         }).catch(() => {})
       })
@@ -370,6 +377,8 @@ window.K = window.K || {};
     const tags = Array.isArray(game.tags) ? game.tags.slice(0, 4) : []
     const shots = Array.isArray(game.screenshots) ? game.screenshots.slice(0, 3) : []
     const metaScore = game.metacritic?.score
+    const comm = game.community || null
+    const commReviews = Array.isArray(comm?.reviews) ? comm.reviews.slice(0, 3) : []
     const dev = Array.isArray(game.developers) && game.developers.length ? game.developers[0] : ''
     const priceLabel = game.priceText || (game.price ? U.formatNumber(game.price, 0) + ' ₽' : '')
 
@@ -377,6 +386,7 @@ window.K = window.K || {};
       '<div class="steam-card-media">' +
         (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy" class="steam-card-cover">' : '<div class="steam-placeholder">STEAM</div>') +
         '<div class="steam-card-badges">' +
+          (comm?.count > 0 ? '<span class="ach-pill" title="Средняя оценка участников Критериума">★ Критериум ' + U.formatNumber(comm.average) + ' (' + comm.count + ')</span>' : '') +
           (metaScore ? '<span class="chip good" title="Оценка Metacritic">MC ' + metaScore + '</span>' : '') +
           (game.discountPercent > 0 ? '<span class="chip accent">−' + game.discountPercent + '%</span>' : '') +
           (priceLabel ? '<span class="chip">' + U.esc(priceLabel) + '</span>' : '') +
@@ -395,8 +405,17 @@ window.K = window.K || {};
           const full = safeSteamImage(s.full || s.thumb)
           return thumb ? '<img src="' + U.attr(thumb) + '" data-shot-full="' + U.attr(full) + '" data-shot-title="' + U.attr(game.title + ' — скриншот ' + (idx + 1)) + '" alt="" loading="lazy" title="Нажмите, чтобы увеличить скриншот">' : ''
         }).join('') + '</div>' : '') +
+        (commReviews.length ? '<div class="card-comm-reviews">' +
+          '<div class="tiny dim" style="margin-bottom:4px">Оценки участников (' + comm.count + '):</div>' +
+          commReviews.map((rev) => {
+            const p = rev.profile || {}
+            return '<div class="card-comm-row" data-inspect-review="' + U.attr(rev.id) + '" data-inspect-game="' + U.attr(game.title) + '" title="Нажмите, чтобы открыть полный разбор">' +
+              '<span class="tiny">' + U.esc((p.avatar || '🎮') + ' ' + (p.display_name || p.handle || 'Участник')) + '</span>' +
+              (rev.verdict ? '<span class="tiny dim ellipsis" style="flex:1">' + U.esc(rev.verdict) + '</span>' : '<span class="spacer"></span>') +
+              '<b class="tiny mono" style="color:' + U.scoreColor(rev.score) + '">' + U.formatNumber(rev.score) + '</b></div>'
+          }).join('') + '</div>' : '') +
         '<div class="row wrap" style="gap:8px;margin-top:auto;padding-top:12px">' +
-          '<button class="btn sm" data-route="#/steam/' + game.steamAppId + '">Страница игры</button>' +
+          '<button class="btn sm" data-route="#/steam/' + game.steamAppId + '">Страница игры' + (comm?.count ? ' (' + comm.count + ')' : '') + '</button>' +
           '<button class="btn sm primary" data-route="#/review/' + game.steamAppId + '">Оценить</button>' +
           '<span class="spacer"></span>' +
           '<span class="tiny dim">#' + game.steamAppId + '</span>' +
@@ -404,18 +423,76 @@ window.K = window.K || {};
       '</div></article>'
   }
 
+  function openScreenshotLightbox(shots, startIndex, gameTitle) {
+    if (!Array.isArray(shots) || !shots.length) return
+    let idx = Math.max(0, Math.min(shots.length - 1, Number(startIndex) || 0))
+    const body =
+      '<div class="shot-lightbox">' +
+        '<div class="shot-lightbox-stage">' +
+          '<img id="lb-img" src="' + U.attr(shots[idx].full || shots[idx].thumb) + '" alt="">' +
+          '<button type="button" class="shot-nav prev" id="lb-prev" title="Предыдущий скриншот (←)" aria-label="Предыдущий">‹</button>' +
+          '<button type="button" class="shot-nav next" id="lb-next" title="Следующий скриншот (→)" aria-label="Следующий">›</button>' +
+          '<button type="button" class="shot-close" data-close title="Закрыть (Esc)" aria-label="Закрыть">✕</button>' +
+          '<div class="shot-counter" id="lb-counter">' + (idx + 1) + ' / ' + shots.length + '</div>' +
+        '</div>' +
+        (shots.length > 1 ? '<div class="shot-lightbox-thumbs" id="lb-thumbs">' +
+          shots.map((s, i) =>
+            '<button type="button" class="steam-shot-thumb' + (i === idx ? ' active' : '') + '" data-lb-idx="' + i + '">' +
+            '<img src="' + U.attr(s.thumb || s.full) + '" alt=""></button>'
+          ).join('') + '</div>' : '') +
+      '</div>'
+
+    U.openModal({
+      title: (gameTitle || 'Скриншот') + ' — скриншоты',
+      width: 1060,
+      body,
+      onMount({ root }) {
+        const imgEl = U.$('#lb-img', root)
+        const counterEl = U.$('#lb-counter', root)
+        const setIdx = (nextIdx) => {
+          idx = (nextIdx + shots.length) % shots.length
+          if (imgEl) imgEl.src = shots[idx].full || shots[idx].thumb
+          if (counterEl) counterEl.textContent = (idx + 1) + ' / ' + shots.length
+          U.$$('[data-lb-idx]', root).forEach((b) => {
+            const active = Number(b.dataset.lbIdx) === idx
+            b.classList.toggle('active', active)
+            if (active) b.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+          })
+        }
+        U.$('#lb-prev', root)?.addEventListener('click', (e) => { e.stopPropagation(); setIdx(idx - 1) })
+        U.$('#lb-next', root)?.addEventListener('click', (e) => { e.stopPropagation(); setIdx(idx + 1) })
+        U.$$('[data-lb-idx]', root).forEach((b) => b.addEventListener('click', () => setIdx(Number(b.dataset.lbIdx))))
+
+        const onKey = (e) => {
+          if (!root.isConnected) {
+            document.removeEventListener('keydown', onKey)
+            return
+          }
+          if (e.key === 'ArrowLeft') { e.preventDefault(); setIdx(idx - 1) }
+          else if (e.key === 'ArrowRight') { e.preventDefault(); setIdx(idx + 1) }
+        }
+        document.addEventListener('keydown', onKey)
+        const obs = new MutationObserver(() => {
+          if (!root.isConnected) {
+            document.removeEventListener('keydown', onKey)
+            obs.disconnect()
+          }
+        })
+        obs.observe(document.body, { childList: true, subtree: true })
+      }
+    })
+  }
+
   function bindCatalogScreenshots(container) {
     U.$$('[data-shot-full]', container).forEach((img) => {
       img.addEventListener('click', (e) => {
         e.stopPropagation()
-        const full = img.dataset.shotFull
-        const title = img.dataset.shotTitle || 'Скриншот'
-        if (!full) return
-        U.openModal({
-          title,
-          width: 980,
-          body: '<img src="' + U.attr(full) + '" alt="" style="width:100%;height:auto;border-radius:12px;display:block">'
-        })
+        const card = img.closest('.steam-catalog-card')
+        const siblings = card ? U.$$('[data-shot-full]', card) : [img]
+        const shots = siblings.map((el) => ({ thumb: el.src, full: el.dataset.shotFull || el.src }))
+        const startIdx = Math.max(0, siblings.indexOf(img))
+        const title = (img.dataset.shotTitle || 'Скриншот').replace(/\s*—\s*скриншот\s*\d+$/i, '')
+        openScreenshotLightbox(shots, startIdx, title)
       })
     })
   }
@@ -514,9 +591,16 @@ window.K = window.K || {};
 
     if (shots.length) {
       html += '<div class="card pad" style="margin-top:16px">' +
-        cardTitle('Скриншоты из Steam', 'Нажмите на миниатюру для переключения или на большой кадр — для увеличения') +
+        cardTitle('Скриншоты из Steam', 'Листайте стрелками на кадре, клавишами ← → или нажмите на кадр для полноэкранного просмотра') +
         '<div class="steam-gallery">' +
-          '<div class="steam-gallery-main"><img id="steam-main-shot" src="' + U.attr(shots[0].full) + '" alt="" data-full="' + U.attr(shots[0].full) + '"></div>' +
+          '<div class="steam-gallery-main">' +
+            '<img id="steam-main-shot" src="' + U.attr(shots[0].full) + '" alt="" data-idx="0" data-full="' + U.attr(shots[0].full) + '">' +
+            (shots.length > 1
+              ? '<button type="button" class="shot-nav prev" id="steam-shot-prev" title="Предыдущий скриншот (←)" aria-label="Предыдущий">‹</button>' +
+                '<button type="button" class="shot-nav next" id="steam-shot-next" title="Следующий скриншот (→)" aria-label="Следующий">›</button>' +
+                '<div class="shot-counter" id="steam-shot-counter">1 / ' + shots.length + '</div>'
+              : '') +
+          '</div>' +
           '<div class="steam-gallery-strip">' +
             shots.map((s, idx) =>
               '<button type="button" class="steam-shot-thumb' + (idx === 0 ? ' active' : '') + '" data-shot-idx="' + idx + '" data-shot-src="' + U.attr(s.full) + '">' +
@@ -620,42 +704,168 @@ window.K = window.K || {};
     }
   }
 
+  function openCommunityReviewModal(review, gameTitle) {
+    if (!review) return
+    const S = window.K.scoring
+    const C = window.K.charts
+    const profile = review.profile || {}
+    const catalog = window.K.app.catalog(review.genre_id || null)
+    const cells = review.criterion_ratings && typeof review.criterion_ratings === 'object' ? review.criterion_ratings : {}
+    const computed = S.computeScore(catalog, cells)
+    const total = Number(review.score) || computed.total || 0
+    const grade = S.gradeFor(catalog, total)
+    const genreLabel = window.K.app.genreName(review.genre_id || '')
+
+    let html = '<div class="card pad" style="margin-bottom:14px">' +
+      '<div class="row wrap" style="gap:14px;align-items:center">' +
+        '<div class="mini-avatar" style="width:44px;height:44px;font-size:22px">' + U.esc(profile.avatar || '🎮') + '</div>' +
+        '<div class="grow">' +
+          '<div class="row wrap" style="gap:8px"><b>' + U.esc(profile.display_name || profile.handle || 'Участник') + '</b>' + badgePillsHtml(profile, false) + '</div>' +
+          '<div class="tiny dim" style="margin-top:3px">Жанр: ' + U.esc(genreLabel) + ' · Заполнено: ' + Math.round((Number(review.coverage ?? computed.coverage) || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</div>' +
+        '</div>' +
+        '<div>' + C.ring(total, { size: 96, stroke: 8, color: U.scoreColor(total), sublabel: grade ? grade.letter + ' · ' + grade.label : '' }) + '</div>' +
+      '</div>' +
+      (review.verdict ? '<div class="divider"></div><div style="font-size:13px;line-height:1.6">' + U.esc(review.verdict) + '</div>' : '') +
+      '</div>'
+
+    if (review.pros || review.cons) {
+      html += '<div class="notes-grid" style="margin-top:0;margin-bottom:14px">' +
+        (review.pros ? '<div class="card note-card good"><h4>Сильные стороны</h4><div class="text">' + U.esc(review.pros) + '</div></div>' : '') +
+        (review.cons ? '<div class="card note-card bad"><h4>Слабые стороны</h4><div class="text">' + U.esc(review.cons) + '</div></div>' : '') +
+        '</div>'
+    }
+
+    if (computed.rated > 0) {
+      html += '<div class="tier-cards" style="margin-bottom:14px">' +
+        computed.tiers.map((t) =>
+          '<div class="card tier-card"><div class="t-name">' + U.esc(t.name) + ' · ' + t.points + '</div>' +
+          '<div class="t-value">' + U.formatNumber(t.earned) + '<small> / ' + t.points + '</small></div>' +
+          '<div class="bar"><i style="width:' + (t.points ? (t.earned / t.points) * 100 : 0) + '%;background:' + U.scoreColor((t.earned / t.points) * 100) + '"></i></div>' +
+          '<div class="tiny dim" style="margin-top:6px">' + t.rated + ' из ' + t.applicable + ' критериев</div></div>'
+        ).join('') + '</div>'
+
+      html += '<div class="card" style="padding:14px 16px 6px"><table class="cat-table"><thead><tr>' +
+        '<th>Категория</th><th class="num">Вес</th><th class="num">Балл</th><th>Шкала</th><th class="num">Вклад</th></tr></thead><tbody>'
+      for (const tier of catalog.tiers) {
+        const cats = computed.categories.filter((c) => c.tier === tier.id && c.score != null)
+        if (!cats.length) continue
+        html += '<tr><td colspan="5" style="padding-top:12px"><div class="eyebrow" style="margin:0">' + U.esc(tier.name) + ' · ' + tier.points + ' баллов</div></td></tr>'
+        for (const cat of cats) {
+          const shown = Math.round(cat.score * 10) / 10
+          html += '<tr><td>' + U.esc(cat.name) + '</td>' +
+            '<td class="num dim">' + U.formatNumber(cat.points, 1) + '</td>' +
+            '<td class="num cat-score" style="color:' + U.scoreColor(cat.score * 10) + '">' + U.formatNumber(shown) + '<span class="dim tiny">/10</span></td>' +
+            '<td><div class="bar"><i style="width:' + (cat.score * 10) + '%;background:' + U.scoreColor(cat.score * 10) + '"></i></div></td>' +
+            '<td class="num">' + U.formatNumber(cat.earned, 1) + '</td></tr>'
+        }
+      }
+      html += '</tbody></table></div>'
+    }
+
+    U.openModal({
+      title: (gameTitle || 'Игра') + ' — оценка ' + (profile.display_name || profile.handle || 'участника'),
+      width: 820,
+      body: html
+    })
+  }
+
+  function bindReviewInspectors(container, gamesList) {
+    const byId = new Map()
+    for (const g of gamesList || []) {
+      for (const r of g?.community?.reviews || []) {
+        byId.set(String(r.id), { review: r, title: g.title })
+      }
+    }
+    U.$$('[data-inspect-review]', container).forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const found = byId.get(String(el.dataset.inspectReview))
+        if (found) openCommunityReviewModal(found.review, found.title)
+      })
+    })
+  }
+
   function reviewCard(review) {
     const profile = review.profile || {}
-    return '<article class="community-review"><div class="row wrap"><span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
+    const genreLabel = window.K.app.genreName(review.genre_id || '')
+    return '<article class="community-review" data-open-review="' + U.attr(review.id) + '" style="cursor:pointer" title="Нажмите, чтобы посмотреть полный разбор по категориям">' +
+      '<div class="row wrap"><span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
       '<button class="text-link" data-route="#/person/' + U.attr(profile.handle || '') + '">' + U.esc(profile.display_name || profile.handle || 'Участник') + '</button>' +
       badgePillsHtml(profile, false) +
-      '<span class="spacer"></span><b class="review-score" style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</b></div>' +
+      '<span class="chip">' + U.esc(genreLabel || 'Жанр не указан') + '</span>' +
+      '<span class="spacer"></span><b class="review-score" style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + ' / 100</b></div>' +
       (review.review_title ? '<h4 style="margin-top:9px">' + U.esc(review.review_title) + '</h4>' : '') +
-      '<div class="tiny dim" style="margin-top:5px">Жанр: ' + U.esc(review.genre_id || 'не указан') + '</div>' +
-      (review.verdict ? '<p class="small muted" style="margin-top:5px;line-height:1.6">' + U.esc(review.verdict) + '</p>' : '') +
-      '<div class="tiny dim" style="margin-top:7px">Заполнено: ' + Math.round((review.coverage || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</div></article>'
+      (review.verdict ? '<p class="small muted" style="margin-top:7px;line-height:1.6">' + U.esc(review.verdict) + '</p>' : '') +
+      ((review.pros || review.cons) ? '<div class="row wrap" style="gap:10px;margin-top:8px">' +
+        (review.pros ? '<span class="tiny" style="color:var(--good)">+ ' + U.esc(String(review.pros).split(/\r?\n/)[0]) + '</span>' : '') +
+        (review.cons ? '<span class="tiny" style="color:var(--bad)">− ' + U.esc(String(review.cons).split(/\r?\n/)[0]) + '</span>' : '') +
+        '</div>' : '') +
+      '<div class="row wrap" style="margin-top:9px"><span class="tiny dim">Заполнено: ' + Math.round((review.coverage || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</span>' +
+      '<span class="spacer"></span><button type="button" class="btn ghost sm" data-open-review="' + U.attr(review.id) + '">Открыть полный разбор</button></div></article>'
   }
 
   function bindSteamGame(view, steam, steamReviews, status, shared) {
     U.$('#open-steam', view)?.addEventListener('click', () => api.openExternal(steam.storeUrl))
     U.$$('[data-external]', view).forEach((button) => button.addEventListener('click', () => api.openExternal(button.dataset.external)))
-    const mainShot = U.$('#steam-main-shot', view)
-    U.$$('[data-shot-src]', view).forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const src = btn.dataset.shotSrc
-        if (mainShot && src) {
-          mainShot.src = src
-          mainShot.dataset.full = src
-        }
-        U.$$('[data-shot-src]', view).forEach((b) => b.classList.remove('active'))
-        btn.classList.add('active')
+    U.$$('[data-open-review]', view).forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-route]')) return
+        e.stopPropagation()
+        const revId = el.dataset.openReview
+        const rev = (shared?.reviews || []).find((r) => String(r.id) === String(revId))
+        if (rev) openCommunityReviewModal(rev, steam.title)
       })
+    })
+    const shots = (Array.isArray(steam.screenshots) ? steam.screenshots : [])
+      .map((s) => ({ thumb: safeSteamImage(s.thumb), full: safeSteamImage(s.full || s.thumb) }))
+      .filter((s) => s.thumb)
+    const mainShot = U.$('#steam-main-shot', view)
+    const counterEl = U.$('#steam-shot-counter', view)
+    let currentIdx = 0
+
+    const selectShot = (nextIdx) => {
+      if (!shots.length || !mainShot) return
+      currentIdx = (nextIdx + shots.length) % shots.length
+      const chosen = shots[currentIdx]
+      mainShot.src = chosen.full
+      mainShot.dataset.full = chosen.full
+      mainShot.dataset.idx = String(currentIdx)
+      if (counterEl) counterEl.textContent = (currentIdx + 1) + ' / ' + shots.length
+      U.$$('[data-shot-idx]', view).forEach((b) => {
+        const active = Number(b.dataset.shotIdx) === currentIdx
+        b.classList.toggle('active', active)
+        if (active) b.scrollIntoView({ block: 'nearest' })
+      })
+    }
+
+    U.$$('[data-shot-idx]', view).forEach((btn) => {
+      btn.addEventListener('click', () => selectShot(Number(btn.dataset.shotIdx) || 0))
+    })
+    U.$('#steam-shot-prev', view)?.addEventListener('click', (e) => {
+      e.stopPropagation()
+      selectShot(currentIdx - 1)
+    })
+    U.$('#steam-shot-next', view)?.addEventListener('click', (e) => {
+      e.stopPropagation()
+      selectShot(currentIdx + 1)
     })
     mainShot?.addEventListener('click', () => {
-      const full = mainShot.dataset.full || mainShot.src
-      if (!full) return
-      U.openModal({
-        title: steam.title + ' — скриншот',
-        width: 1020,
-        body: '<img src="' + U.attr(full) + '" alt="" style="width:100%;height:auto;border-radius:12px;display:block">'
-      })
+      openScreenshotLightbox(shots, currentIdx, steam.title)
     })
+
+    if (shots.length > 1) {
+      const onPageKey = (e) => {
+        if (!view.isConnected || location.hash !== '#/steam/' + steam.steamAppId) {
+          document.removeEventListener('keydown', onPageKey)
+          return
+        }
+        if (document.querySelector('.modal-backdrop')) return
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return
+        if (e.key === 'ArrowLeft') { e.preventDefault(); selectShot(currentIdx - 1) }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); selectShot(currentIdx + 1) }
+      }
+      document.addEventListener('keydown', onPageKey)
+    }
     U.$('#add-shared-game', view)?.addEventListener('click', async (event) => {
       const button = event.currentTarget
       button.disabled = true
@@ -737,6 +947,13 @@ window.K = window.K || {};
       if (!result.reviews.length) html += '<div class="empty"><h3>Пока нет публичных оценок</h3><p>Когда владелец профиля опубликует оценку, она появится здесь.</p></div>'
       else html += '<div class="game-grid">' + result.reviews.map((r) => personReviewCard(r)).join('') + '</div>'
       view.innerHTML = shell(html)
+      U.$$('[data-person-review]', view).forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation()
+          const rev = result.reviews.find((r) => String(r.id) === String(btn.dataset.personReview))
+          if (rev) openCommunityReviewModal(Object.assign({}, rev, { profile: p }), rev.game?.title || 'Игра')
+        })
+      })
     } catch (err) {
       view.innerHTML = shell(head('Сообщество', 'Не удалось загрузить профиль', err.message || String(err)) + '<button class="btn" data-route="#/community">К участникам</button>')
     }
@@ -744,11 +961,13 @@ window.K = window.K || {};
 
   function personReviewCard(review) {
     const game = review.game || {}
-    return '<button class="card person-review-card" data-route="#/steam/' + Number(game.steam_app_id || 0) + '">' +
+    return '<div class="card person-review-card" data-person-review="' + U.attr(review.id) + '" title="Нажмите, чтобы посмотреть полный разбор">' +
       (safeSteamImage(game.header_image) ? '<img src="' + U.attr(safeSteamImage(game.header_image)) + '" alt="" loading="lazy">' : '') +
-      '<span class="grow"><b>' + U.esc(game.title || 'Игра') + '</b><small>' + U.esc(review.review_title || review.genre_id || '') + '</small>' +
-      (review.verdict ? '<span>' + U.esc(review.verdict) + '</span>' : '') + '</span>' +
-      '<strong style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</strong></button>'
+      '<span class="grow"><b>' + U.esc(game.title || 'Игра') + '</b><small>' + U.esc(window.K.app.genreName(review.genre_id || '')) + '</small>' +
+      (review.verdict ? '<span>' + U.esc(review.verdict) + '</span>' : '') +
+      '<span class="row wrap" style="gap:6px;margin-top:4px"><button type="button" class="btn ghost sm" data-person-review="' + U.attr(review.id) + '">Разбор</button>' +
+      (game.steam_app_id ? '<button type="button" class="btn ghost sm" data-route="#/steam/' + Number(game.steam_app_id) + '">Страница игры</button>' : '') + '</span></span>' +
+      '<strong style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</strong></div>'
   }
 
   window.K.Social = {

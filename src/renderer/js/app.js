@@ -674,6 +674,7 @@ window.K = window.K || {};
       if (location.hash) app.render()
       else location.hash = '#/overview'
       app.reloadCloudPatches(true)
+      syncLocalSteamReviews()
       U.$('#boot').classList.add('hide')
       setTimeout(() => { const b = U.$('#boot'); if (b) b.remove() }, 400)
     } catch (err) {
@@ -683,6 +684,41 @@ window.K = window.K || {};
         bootEl.innerHTML = '<div style="max-width:520px;padding:24px;text-align:center"><div style="color:#ffb0a3;font-weight:600;margin-bottom:8px">Не удалось запустить приложение</div><div style="font-size:12px;color:#8d97ab;line-height:1.6">' + U.esc(err && err.message ? err.message : String(err)) + '</div></div>'
       }
     }
+  }
+
+  async function syncLocalSteamReviews() {
+    try {
+      const status = await api.cloud.status()
+      if (!status?.signedIn) return
+      for (const g of app.games || []) {
+        const steamAppId = Number(g.custom?._steamAppId) || 0
+        if (!steamAppId) continue
+        let gameId = g.custom?._communityGameId || ''
+        if (!gameId) {
+          const shared = await api.cloud.addSteamGame(steamAppId).catch(() => null)
+          if (shared?.id) gameId = shared.id
+        }
+        if (!gameId) continue
+        const r = app.ratings[g.id] || {}
+        const cat = app.catalog(g.genre)
+        const calc = S.computeScore(cat, r)
+        const score = calc.rated > 0 ? calc.total : 50
+        await api.cloud.saveReview({
+          gameId,
+          genreId: g.genre,
+          score,
+          coverage: calc.coverage,
+          scoringVersion: app.base.coreVersion,
+          officialPatchIds: (app.cloudPatches || []).filter((p) => p.is_enabled).map((p) => p.patch_id),
+          reviewTitle: '',
+          verdict: g.verdict || '',
+          pros: g.pros || '',
+          cons: g.cons || '',
+          criterionRatings: r,
+          isPublic: true
+        }).catch(() => {})
+      }
+    } catch { /* ignore background sync errors */ }
   }
 
   /* ---------- глобальные события ---------- */

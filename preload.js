@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('krit', {
     steamReviews: (steamAppId) => invoke('cloud:steamReviews', steamAppId),
     publicGameSearch: (query) => invoke('cloud:publicGameSearch', query),
     publicGame: (id) => invoke('cloud:publicGame', id),
+    communityBySteamIds: (ids) => invoke('cloud:communityBySteamIds', ids),
     addSteamGame: (steamAppId) => invoke('cloud:addSteamGame', steamAppId),
     saveReview: (review) => invoke('cloud:saveReview', review),
     listAppPatches: () => invoke('cloud:listAppPatches'),

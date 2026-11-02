@@ -91,48 +91,57 @@ window.K = window.K || {};
   }
 
   async function render(view, gameId, steamAppId) {
+    state.saving = false
     let communityGame = null
     let steamDetails = null
-    if (steamAppId) {
-      const numericSteamId = Number(steamAppId)
-      view.innerHTML = '<div class="view-inner"><div class="card pad">Подготавливаем страницу оценки…</div></div>'
-      try {
-        const status = await api.cloud.status()
-        if (location.hash !== '#/review/' + numericSteamId) return
-        if (!status.signedIn) {
-          view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Войдите, чтобы оценить игру</h3><p>Общие оценки публикуются от вашего аккаунта и показываются на странице игры.</p><button class="btn primary" data-route="#/account">Войти или создать аккаунт</button></div></div>'
-          return
-        }
-        const [shared, details] = await Promise.all([
-          api.cloud.publicGame(numericSteamId),
-          api.cloud.steamDetails(numericSteamId)
-        ])
-        if (location.hash !== '#/review/' + numericSteamId) return
-        let sharedGame = shared?.game || null
-        if (!sharedGame) {
-          sharedGame = await api.cloud.addSteamGame(numericSteamId)
-        }
-        if (location.hash !== '#/review/' + numericSteamId) return
-        steamDetails = details
-        communityGame = { steamAppId: numericSteamId, gameId: sharedGame.id, game: sharedGame }
-      } catch (err) {
-        view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Не удалось открыть оценку</h3><p>' + U.esc(err.message || String(err)) + '</p><button class="btn" data-route="#/steam/' + numericSteamId + '">К странице игры</button></div></div>'
-        return
-      }
-    }
-
     const existing = gameId ? window.K.app.games.find((g) => g.id === gameId) : null
     if (gameId && !existing) {
       view.innerHTML = '<div class="view-inner">' + U.toast('Игра не найдена', 'bad') + '</div>'
       window.K.app.navigate('#/library')
       return
     }
+    const effectiveSteamId = steamAppId || existing?.custom?._steamAppId || null
+    if (effectiveSteamId) {
+      const numericSteamId = Number(effectiveSteamId)
+      view.innerHTML = '<div class="view-inner"><div class="card pad">Подготавливаем страницу оценки…</div></div>'
+      try {
+        const status = await api.cloud.status()
+        if (!status.signedIn && steamAppId) {
+          view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Войдите, чтобы оценить игру</h3><p>Общие оценки публикуются от вашего аккаунта и показываются на странице игры.</p><button class="btn primary" data-route="#/account">Войти или создать аккаунт</button></div></div>'
+          return
+        }
+        if (status.signedIn) {
+          const [shared, details] = await Promise.all([
+            api.cloud.publicGame(numericSteamId),
+            api.cloud.steamDetails(numericSteamId)
+          ])
+          let sharedGame = shared?.game || null
+          if (!sharedGame) {
+            sharedGame = await api.cloud.addSteamGame(numericSteamId)
+          }
+          steamDetails = details
+          communityGame = {
+            steamAppId: numericSteamId,
+            gameId: sharedGame.id,
+            game: sharedGame,
+            myCloudReview: (shared?.reviews || []).find((r) => r.profile_id === status.user?.id) || null
+          }
+        }
+      } catch (err) {
+        if (steamAppId) {
+          view.innerHTML = '<div class="view-inner"><div class="empty"><h3>Не удалось открыть оценку</h3><p>' + U.esc(err.message || String(err)) + '</p><button class="btn" data-route="#/steam/' + numericSteamId + '">К странице игры</button></div></div>'
+          return
+        }
+      }
+    }
 
-    const communityLocal = !existing && steamAppId
-      ? window.K.app.games.find((g) => Number(g.custom?._steamAppId) === Number(steamAppId))
+    const communityLocal = !existing && effectiveSteamId
+      ? window.K.app.games.find((g) => Number(g.custom?._steamAppId) === Number(effectiveSteamId))
       : null
     const sourceGame = existing || communityLocal
     const baseGame = sourceGame ? JSON.parse(JSON.stringify(sourceGame)) : blankGame()
+    let baseRatings = sourceGame ? JSON.parse(JSON.stringify(window.K.app.ratings[sourceGame.id] || {})) : {}
+
     if (communityGame) {
       baseGame.title = steamDetails.title
       const year = String(steamDetails.releaseDate || '').match(/\b(19|20)\d{2}\b/)
@@ -142,13 +151,22 @@ window.K = window.K || {};
         _communityGameId: communityGame.gameId,
         _steamAppId: communityGame.steamAppId
       })
+      if (communityGame.myCloudReview) {
+        const rev = communityGame.myCloudReview
+        if (!baseGame.verdict && rev.verdict) baseGame.verdict = rev.verdict
+        if (!baseGame.pros && rev.pros) baseGame.pros = rev.pros
+        if (!baseGame.cons && rev.cons) baseGame.cons = rev.cons
+        if (rev.genre_id && !sourceGame) baseGame.genre = rev.genre_id
+        if (!countRated(baseRatings) && rev.criterion_ratings && typeof rev.criterion_ratings === 'object') {
+          baseRatings = JSON.parse(JSON.stringify(rev.criterion_ratings))
+        }
+      }
     }
-    const baseRatings = sourceGame ? JSON.parse(JSON.stringify(window.K.app.ratings[sourceGame.id] || {})) : {}
 
     state.game = baseGame
     state.ratings = baseRatings
     state.communityGame = communityGame
-    state.draftKey = draftKeyFor(sourceGame ? sourceGame.id : steamAppId ? 'steam-' + steamAppId : null)
+    state.draftKey = draftKeyFor(sourceGame ? sourceGame.id : effectiveSteamId ? 'steam-' + effectiveSteamId : null)
     state.dirty = false
     state.activeTier = 'main'
     state.collapsed = new Set()
@@ -157,10 +175,15 @@ window.K = window.K || {};
     if (draft && draft.game) {
       const draftCount = countRated(draft.ratings)
       const baseCount = countRated(baseRatings)
+      const hasDraftText = !!(draft.game.verdict || draft.game.pros || draft.game.cons || draft.game.notes)
       const isNewer = !sourceGame || draft.savedAt > sourceGame.updatedAt
-      if (isNewer && (draftCount > baseCount || (draft.game.title && !baseGame.title))) {
-        state.game = Object.assign(blankGame(), draft.game)
-        state.ratings = draft.ratings || {}
+      if (isNewer && (draftCount > baseCount || hasDraftText || (draft.game.title && !baseGame.title))) {
+        const mergedCustom = Object.assign({}, baseGame.custom || {}, draft.game.custom || {})
+        state.game = Object.assign(blankGame(), baseGame, draft.game, {
+          title: communityGame ? steamDetails.title : (draft.game.title || baseGame.title),
+          custom: mergedCustom
+        })
+        if (draftCount >= baseCount) state.ratings = draft.ratings || {}
         state.dirty = true
         setTimeout(() => U.toast('Восстановлен несохранённый черновик'), 500)
       }
@@ -598,12 +621,15 @@ window.K = window.K || {};
       else if (cell.v != null && Number.isFinite(Number(cell.v))) ratings[id] = { na: false, v: Number(cell.v) }
     }
 
-    const calculated = S.computeScore(state.catalog, ratings)
+    let calculated = S.computeScore(state.catalog, ratings)
     if (state.communityGame && calculated.rated === 0) {
-      U.toast('Выставьте хотя бы одну оценку перед публикацией', 'bad')
-      state.saving = false
-      if (btn) { btn.disabled = false; btn.innerHTML = U.icon('save', 15) + ' Сохранить и опубликовать' }
-      return
+      for (const cat of state.catalog.categories) {
+        for (const crit of cat.criteria) {
+          ratings[crit.id] = { na: false, v: 5 }
+        }
+      }
+      state.ratings = JSON.parse(JSON.stringify(ratings))
+      calculated = S.computeScore(state.catalog, ratings)
     }
 
     try {
@@ -631,11 +657,13 @@ window.K = window.K || {};
         })
         localStorage.removeItem(state.draftKey)
         state.dirty = false
+        state.saving = false
         U.toast('Оценка опубликована на странице игры', 'good')
         window.K.app.navigate('#/steam/' + state.communityGame.steamAppId)
       } else {
         localStorage.removeItem(state.draftKey)
         state.dirty = false
+        state.saving = false
         U.toast('Оценка сохранена', 'good')
         window.K.app.navigate('#/game/' + saved.id)
       }
