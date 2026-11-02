@@ -209,6 +209,8 @@ function registerIpc() {
   ipcMain.handle('cloud:saveReview', (_e, review) => cloud.saveReview(review))
   ipcMain.handle('cloud:listModerationQueue', () => cloud.listModerationQueue())
   ipcMain.handle('cloud:moderateReview', (_e, id, action) => cloud.moderateReview(id, action))
+  ipcMain.handle('cloud:listDeveloperReviews', (_e, query) => cloud.listDeveloperReviews(query))
+  ipcMain.handle('cloud:developerEditReview', (_e, id, patch) => cloud.developerEditReview(id, patch))
   ipcMain.handle('cloud:listAppPatches', () => cloud.listAppPatches())
   ipcMain.handle('cloud:publishAppPatch', (_e, patch) => cloud.publishAppPatch(patch))
   ipcMain.handle('cloud:toggleAppPatch', (_e, id, enabled) => cloud.toggleAppPatch(id, enabled))

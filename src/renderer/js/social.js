@@ -12,6 +12,9 @@ window.K = window.K || {};
   let profileSearch = ''
   let accountMode = 'signin'
   let searchTimer = null
+  let devReviewsFilter = 'all'
+  let devReviewsSearch = ''
+  let devReviewsRows = []
 
   const REGION_OPTIONS = [
     ['ru', '₽ RUB · Россия'],
@@ -21,6 +24,19 @@ window.K = window.K || {};
     ['ua', '₴ UAH · Украина']
   ]
   const CURRENCY_SIGNS = { RUB: '₽', KZT: '₸', USD: '$', EUR: '€', UAH: '₴' }
+
+  const DEV_REVIEW_FILTERS = [
+    ['all', 'Все'],
+    ['approved', 'Опубликованные'],
+    ['pending', 'На модерации'],
+    ['rejected', 'Отклонённые']
+  ]
+
+  function devStatusChip(status, isPublic) {
+    if (status === 'pending') return '<span class="chip" style="color:#e4c887;border-color:rgba(228,200,135,.3)">на модерации</span>'
+    if (status === 'rejected' || isPublic === false) return '<span class="chip bad">скрыта / отклонена</span>'
+    return '<span class="chip good">опубликована</span>'
+  }
 
   function regionLabel(code) {
     const found = REGION_OPTIONS.find(([id]) => id === code)
@@ -309,7 +325,16 @@ window.K = window.K || {};
       '</div></div></div>' +
       (isDeveloper ? '<div class="card pad" id="moderation-card" style="margin-top:16px">' +
         cardTitle('Очередь модерации', 'Сюда автоматически попадают подозрительные рецензии: мат, спам и противоречивые оценки.') +
-        '<div id="moderation-list"><div class="small muted">Загружаем очередь…</div></div></div>' : '')
+        '<div id="moderation-list"><div class="small muted">Загружаем очередь…</div></div></div>' : '') +
+      (isDeveloper ? '<div class="card pad" id="dev-reviews-card" style="margin-top:16px">' +
+        cardTitle('Все рецензии участников', 'Вы можете отредактировать, скрыть, отклонить или удалить любую рецензию.') +
+        '<div class="tools" style="margin:12px 0 10px 0"><label class="search">' + U.icon('search', 15) +
+        '<input id="dev-reviews-search" type="text" maxlength="60" placeholder="Имя, игра или текст…" value="' + U.attr(devReviewsSearch) + '"></label></div>' +
+        '<div class="tabs" id="dev-reviews-tabs" style="margin-bottom:12px">' +
+        DEV_REVIEW_FILTERS.map(([id, label]) =>
+          '<button class="tab' + (devReviewsFilter === id ? ' active' : '') + '" data-dev-filter="' + id + '">' + U.esc(label) + '</button>'
+        ).join('') + '</div>' +
+        '<div id="dev-reviews-list"><div class="small muted">Загружаем рецензии…</div></div></div>' : '')
     view.innerHTML = shell(html)
     U.$('#cloud-signout', view).addEventListener('click', async () => {
       await api.cloud.signOut()
@@ -345,7 +370,10 @@ window.K = window.K || {};
         button.disabled = false
       }
     })
-    if (isDeveloper) loadModerationQueue(view)
+    if (isDeveloper) {
+      loadModerationQueue(view)
+      loadDeveloperReviews(view)
+    }
   }
 
   async function loadModerationQueue(view) {
@@ -399,6 +427,175 @@ window.K = window.K || {};
     } catch (err) {
       if (box.isConnected) box.innerHTML = '<div class="empty" style="padding:20px"><h3>Не удалось загрузить очередь</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
     }
+  }
+
+  async function loadDeveloperReviews(view) {
+    const box = U.$('#dev-reviews-list', view)
+    if (!box) return
+    box.innerHTML = '<div class="small muted">Загружаем рецензии…</div>'
+    try {
+      const rows = await api.cloud.listDeveloperReviews({
+        status: devReviewsFilter === 'all' ? '' : devReviewsFilter
+      })
+      devReviewsRows = Array.isArray(rows) ? rows : []
+      renderDeveloperReviewsList(view)
+    } catch (err) {
+      if (box.isConnected) box.innerHTML = '<div class="empty" style="padding:20px"><h3>Не удалось загрузить список</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
+    }
+  }
+
+  function renderDeveloperReviewsList(view) {
+    const box = U.$('#dev-reviews-list', view)
+    if (!box) return
+    if (!devReviewsRows.length) {
+      box.innerHTML = '<div class="empty" style="padding:22px 10px"><h3>Рецензий нет</h3><p>В выбранном фильтре пока нет ни одной рецензии.</p></div>'
+      return
+    }
+    const term = devReviewsSearch.trim().toLowerCase()
+    const visible = term
+      ? devReviewsRows.filter((r) => {
+          const profile = r.profile || {}
+          const game = r.game || {}
+          const hay = [profile.display_name, profile.handle, game.title, r.verdict, r.pros, r.cons]
+            .map((x) => String(x || '').toLowerCase())
+            .join(' ')
+          return hay.includes(term)
+        })
+      : devReviewsRows
+    if (!visible.length) {
+      box.innerHTML = '<div class="empty" style="padding:22px 10px"><h3>Ничего не найдено</h3><p>По этому поиску в выбранном фильтре совпадений нет.</p></div>'
+      return
+    }
+    box.innerHTML = '<div class="mod-queue">' + visible.map((review) => {
+      const profile = review.profile || {}
+      const game = review.game || {}
+      const excerpt = String([review.verdict, review.pros, review.cons].filter(Boolean).join(' ')).slice(0, 260)
+      return '<div class="mod-queue-item" data-dev-review="' + U.attr(review.id) + '">' +
+        '<div class="row wrap" style="gap:10px;align-items:center">' +
+          '<span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
+          '<div class="grow"><div class="row wrap" style="gap:7px">' +
+            (profile.handle
+              ? '<button class="text-link" data-route="#/person/' + U.attr(profile.handle) + '">' + U.esc(profile.display_name || profile.handle) + '</button>'
+              : '<b>' + U.esc(profile.display_name || 'Участник') + '</b>') +
+            (game.title
+              ? (game.steam_app_id
+                ? '<span class="tiny dim">·</span><button class="text-link" data-route="#/steam/' + Number(game.steam_app_id) + '">' + U.esc(game.title) + '</button>'
+                : '<span class="tiny dim">·</span><span class="tiny">' + U.esc(game.title) + '</span>')
+              : '') +
+            '<span class="tiny dim">' + U.esc(U.formatDate(review.updated_at)) + '</span>' + devStatusChip(review.moderation_status, review.is_public) +
+          '</div></div>' +
+          '<b class="mono" style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</b>' +
+        '</div>' +
+        (excerpt ? '<div class="mod-queue-text">' + U.esc(excerpt) + '</div>' : '') +
+        '<div class="row wrap" style="gap:8px;margin-top:9px">' +
+          '<button class="btn sm" data-dev-action="edit">Изменить</button>' +
+          (review.moderation_status !== 'approved' || review.is_public === false ? '<button class="btn sm primary" data-dev-action="approve">Одобрить / показать</button>' : '') +
+          (review.moderation_status !== 'rejected' ? '<button class="btn sm" data-dev-action="reject">Отклонить</button>' : '') +
+          '<button class="btn sm ghost" data-dev-action="delete">Удалить</button>' +
+          '<button class="btn sm ghost" data-dev-action="inspect">Полный разбор</button>' +
+        '</div></div>'
+    }).join('') + '</div>'
+
+    U.$('#dev-reviews-list', view).querySelectorAll('[data-dev-action]').forEach((btn) => {
+      btn.addEventListener('click', async (event) => {
+        event.stopPropagation()
+        const item = btn.closest('[data-dev-review]')
+        const id = item?.dataset.devReview
+        const review = devReviewsRows.find((r) => String(r.id) === String(id))
+        if (!review) return
+        const action = btn.dataset.devAction
+        if (action === 'inspect') {
+          openCommunityReviewModal(review, review.game?.title || 'Игра')
+          return
+        }
+        if (action === 'edit') {
+          openDeveloperReviewEditModal(review, () => {
+            loadDeveloperReviews(view)
+            loadModerationQueue(view)
+          })
+          return
+        }
+        if (action === 'delete') {
+          const ok = await U.confirmDialog({
+            title: 'Удалить рецензию?',
+            text: 'Рецензия «' + (review.game?.title || 'игра') + '» от ' + (review.profile?.display_name || review.profile?.handle || 'участника') + ' будет удалена безвозвратно.',
+            confirmLabel: 'Удалить'
+          })
+          if (!ok) return
+        }
+        U.$$('[data-dev-action]', item).forEach((b) => { b.disabled = true })
+        btn.textContent = action === 'approve' ? 'Показываем…' : action === 'reject' ? 'Отклоняем…' : 'Удаляем…'
+        try {
+          if (action === 'approve') await api.cloud.moderateReview(id, 'approve')
+          else if (action === 'reject') await api.cloud.moderateReview(id, 'reject')
+          else if (action === 'delete') await api.cloud.moderateReview(id, 'delete')
+          U.toast(action === 'approve' ? 'Рецензия одобрена' : action === 'reject' ? 'Рецензия отклонена' : 'Рецензия удалена', action === 'delete' ? 'bad' : 'good')
+          loadDeveloperReviews(view)
+          loadModerationQueue(view)
+        } catch (err) {
+          U.toast(err.message || 'Не удалось выполнить действие', 'bad')
+          U.$$('[data-dev-action]', item).forEach((b) => { b.disabled = false })
+          btn.textContent = action === 'approve' ? 'Одобрить / показать' : action === 'reject' ? 'Отклонить' : action === 'delete' ? 'Удалить' : 'Изменить'
+        }
+      })
+    })
+  }
+
+  function openDeveloperReviewEditModal(review, onChanged) {
+    const profile = review.profile || {}
+    const statusOptions = [
+      ['approved', 'Опубликована'],
+      ['pending', 'На модерации'],
+      ['rejected', 'Отклонена']
+    ]
+    const body = '<div class="form-grid">' +
+      '<div class="field span2"><label>Балл (0–100)</label><input id="dev-ed-score" type="number" min="0" max="100" step="0.1" value="' + (Number(review.score) || 0) + '"></div>' +
+      '<div class="field span2"><label>Покрытие, %</label><input id="dev-ed-coverage" type="number" min="0" max="100" step="1" value="' + Math.round((Number(review.coverage) || 0) * 100) + '"></div>' +
+      '<div class="field span2"><label>Статус модерации</label><select id="dev-ed-status">' +
+        statusOptions.map(([id, label]) => '<option value="' + id + '"' + (review.moderation_status === id ? ' selected' : '') + '>' + U.esc(label) + '</option>').join('') +
+      '</select></div>' +
+      '<div class="field span2"><label>Видимость</label><label class="row small muted" style="margin-top:9px"><input id="dev-ed-public" type="checkbox" style="accent-color:var(--accent)"' + (review.is_public !== false ? ' checked' : '') + '> Показывать всем</label></div>' +
+      '<div class="field span4"><label>Заголовок</label><input id="dev-ed-title" type="text" maxlength="120" value="' + U.attr(review.review_title || '') + '"></div>' +
+      '<div class="field span4"><label>Вердикт</label><textarea id="dev-ed-verdict" spellcheck="true" lang="ru" style="min-height:90px">' + U.esc(review.verdict || '') + '</textarea></div>' +
+      '<div class="field span2"><label>Сильные стороны</label><textarea id="dev-ed-pros" spellcheck="true" lang="ru" style="min-height:90px">' + U.esc(review.pros || '') + '</textarea></div>' +
+      '<div class="field span2"><label>Слабые стороны</label><textarea id="dev-ed-cons" spellcheck="true" lang="ru" style="min-height:90px">' + U.esc(review.cons || '') + '</textarea></div>' +
+      '</div>' +
+      '<p class="tiny dim" style="margin-top:10px">Правки сохраняются сразу для всех участников и видны на странице игры и в профиле автора.</p>'
+
+    U.openModal({
+      title: 'Редактирование рецензии · ' + (profile.display_name || profile.handle || 'участник'),
+      width: 760,
+      body,
+      footer: '<button class="btn ghost" data-cancel>Отмена</button><button class="btn primary" data-save>Сохранить изменения</button>',
+      onMount({ root, close }) {
+        U.$('[data-cancel]', root)?.addEventListener('click', close)
+        U.$('[data-save]', root)?.addEventListener('click', async (e) => {
+          const btn = e.currentTarget
+          btn.disabled = true
+          btn.textContent = 'Сохраняем…'
+          const patch = {
+            score: Number(U.$('#dev-ed-score', root).value) || 0,
+            coverage: Math.max(0, Math.min(100, Number(U.$('#dev-ed-coverage', root).value) || 0)) / 100,
+            moderation_status: U.$('#dev-ed-status', root).value,
+            is_public: U.$('#dev-ed-public', root).checked,
+            review_title: U.$('#dev-ed-title', root).value.trim(),
+            verdict: U.$('#dev-ed-verdict', root).value,
+            pros: U.$('#dev-ed-pros', root).value,
+            cons: U.$('#dev-ed-cons', root).value
+          }
+          try {
+            await api.cloud.developerEditReview(review.id, patch)
+            close()
+            U.toast('Рецензия обновлена', 'good')
+            if (typeof onChanged === 'function') onChanged()
+          } catch (err) {
+            U.toast(err.message || 'Не удалось сохранить изменения', 'bad')
+            btn.disabled = false
+            btn.textContent = 'Сохранить изменения'
+          }
+        })
+      }
+    })
   }
 
   /* ---------- Steam catalog ---------- */
@@ -481,6 +678,15 @@ window.K = window.K || {};
       try { await api.cloud.setSteamRegion(catalogRegion) } catch { /* keep local choice */ }
       loadCatalogResults(view)
     })
+    U.$('#dev-reviews-search', view)?.addEventListener('input', (event) => {
+      devReviewsSearch = event.target.value
+      renderDeveloperReviewsList(view)
+    })
+    U.$$('[data-dev-filter]', view).forEach((btn) => btn.addEventListener('click', () => {
+      devReviewsFilter = btn.dataset.devFilter
+      U.$$('[data-dev-filter]', view).forEach((b) => b.classList.toggle('active', b === btn))
+      loadDeveloperReviews(view)
+    }))
 
     api.cloud.getSteamRegion().then((region) => {
       if (!view.isConnected) return

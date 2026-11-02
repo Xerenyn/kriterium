@@ -708,6 +708,31 @@ function createCloud(configPath, safeStorage, options = {}) {
       })
     },
 
+    async listDeveloperReviews(query = {}) {
+      await ensureSession()
+      const params = new URLSearchParams({
+        select: 'id,profile_id,game_id,genre_id,score,coverage,review_title,verdict,pros,cons,criterion_ratings,moderation_status,moderation_reasons,is_public,updated_at,profile:profiles(handle,display_name,avatar,badges),game:games(id,steam_app_id,title,header_image)',
+        order: 'updated_at.desc',
+        limit: '150'
+      })
+      const wanted = String(query.status || '').trim()
+      if (['approved', 'pending', 'rejected'].includes(wanted)) params.set('moderation_status', 'eq.' + wanted)
+      if (query.profileId) params.set('profile_id', 'eq.' + String(query.profileId))
+      const rows = await rest('reviews?' + params.toString())
+      return Array.isArray(rows) ? rows : []
+    },
+
+    async developerEditReview(reviewId, patch) {
+      await ensureSession()
+      return await rest('rpc/developer_edit_review', {
+        method: 'POST',
+        body: JSON.stringify({
+          target_review_id: String(reviewId || '').trim(),
+          patch: patch && typeof patch === 'object' ? patch : {}
+        })
+      })
+    },
+
     async listAppPatches() {
       await refreshSession()
       const rows = await rest('app_patches?select=patch_id,name,version,description,operations,is_enabled,created_at,updated_at&order=updated_at.desc')

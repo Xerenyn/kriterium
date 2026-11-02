@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld('krit', {
     saveReview: (review) => invoke('cloud:saveReview', review),
     listModerationQueue: () => invoke('cloud:listModerationQueue'),
     moderateReview: (id, action) => invoke('cloud:moderateReview', id, action),
+    listDeveloperReviews: (query) => invoke('cloud:listDeveloperReviews', query),
+    developerEditReview: (id, patch) => invoke('cloud:developerEditReview', id, patch),
     listAppPatches: () => invoke('cloud:listAppPatches'),
     publishAppPatch: (patch) => invoke('cloud:publishAppPatch', patch),
     toggleAppPatch: (id, enabled) => invoke('cloud:toggleAppPatch', id, enabled),
