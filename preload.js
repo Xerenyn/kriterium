@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('krit', {
     listProfiles: (query) => invoke('cloud:listProfiles', query),
     publicProfile: (handle) => invoke('cloud:publicProfile', handle),
     steamSearch: (query, cc) => invoke('cloud:steamSearch', query, cc),
+    steamBrowse: (input) => invoke('cloud:steamBrowse', input),
     steamFeatured: (section, cc) => invoke('cloud:steamFeatured', section, cc),
     steamDetails: (steamAppId, cc) => invoke('cloud:steamDetails', steamAppId, cc),
     getSteamRegion: () => invoke('cloud:getSteamRegion'),

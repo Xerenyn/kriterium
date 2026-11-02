@@ -29,6 +29,7 @@ function normalizeBaseUrl(value, allowLocal) {
 }
 
 const VALID_REGIONS = ['ru', 'kz', 'us', 'de', 'ua']
+const REGION_CURRENCY = { ru: 'RUB', kz: 'KZT', us: 'USD', de: 'EUR', ua: 'UAH' }
 function normalizeRegion(cc) {
   const v = String(cc || '').trim().toLowerCase()
   return VALID_REGIONS.includes(v) ? v : 'ru'
@@ -377,6 +378,41 @@ function createCloud(configPath, safeStorage, options = {}) {
         storeUrl: 'https://store.steampowered.com/app/' + Number(item.id) + '/'
       })).filter((item) => Number.isSafeInteger(item.steamAppId) && item.steamAppId > 0)
       return await this.enrichSteamList(baseItems, targetCc)
+    },
+
+    async steamBrowse(input = {}) {
+      await load()
+      const cc = normalizeRegion(input.cc || config.steamRegion)
+      const start = Math.max(0, Math.floor(Number(input.start) || 0))
+      const count = Math.min(50, Math.max(25, Math.floor(Number(input.count) || 25)))
+      const query = String(input.query || '').trim().slice(0, 100)
+      const section = String(input.section || 'featured')
+      const filterBySection = {
+        featured: 'toprated',
+        top_sellers: 'topsellers',
+        new_releases: 'newreleases',
+        specials: 'specials'
+      }
+      const params = new URLSearchParams({
+        query: '',
+        start: String(start),
+        count: String(count),
+        infinite: '1',
+        l: 'russian',
+        cc,
+        category1: '998'
+      })
+      if (query) params.set('term', query)
+      else if (filterBySection[section]) params.set('filter', filterBySection[section])
+
+      const data = await fetchJson('https://store.steampowered.com/search/results/?' + params.toString())
+      const items = parseSteamSearchRows(data.results_html || '', cc)
+      const total = Math.max(0, Number(data.total_count) || 0)
+      return {
+        items,
+        total: total || start + items.length,
+        hasMore: items.length > 0 && start + items.length < (total || start + items.length)
+      }
     },
 
     async enrichSteamList(items, targetCc) {
@@ -796,6 +832,64 @@ async function fetchJson(url) {
   }
   if (!response.ok) throw new Error('Steam вернул ошибку (' + response.status + ').')
   try { return await response.json() } catch { throw new Error('Steam вернул ответ в неожиданном формате.') }
+}
+
+function parseSteamSearchRows(html, cc) {
+  const currency = REGION_CURRENCY[cc] || 'RUB'
+  const items = []
+  const seen = new Set()
+  const chunks = String(html || '').split('<a href="https://store.steampowered.com/app/')
+  for (let i = 1; i < chunks.length; i++) {
+    const chunk = chunks[i]
+    const idMatch = chunk.match(/^(\d+)\//)
+    if (!idMatch) continue
+    const appId = Number(idMatch[1])
+    if (!Number.isSafeInteger(appId) || appId <= 0 || seen.has(appId)) continue
+
+    const title = cleanSteamHtmlToText((chunk.match(/<span class="title">([\s\S]*?)<\/span>/) || [])[1] || '')
+    if (!title) continue
+
+    const image = (chunk.match(/<img src="([^"]+)"/) || [])[1] || ''
+    const priceRaw = (chunk.match(/data-price-final="(\d+)"/) || [])[1]
+    const price = priceRaw != null ? Number(priceRaw) / 100 : null
+    const discountPercent = Number((chunk.match(/data-discount="(\d+)"/) || [])[1]) || 0
+    const isFree = /discount_final_price free|search_price free|data-price-final="0"/i.test(chunk)
+    const discountedText = cleanSteamHtmlToText(
+      (chunk.match(/class="[^"]*discount_final_price[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span)>/) || [])[1] || ''
+    ).split('\n').map((s) => s.trim()).filter(Boolean)[0] || ''
+    const plainText = cleanSteamHtmlToText(
+      (chunk.match(/class="[^"]*search_price[^"]*"[^>]*>([\s\S]*?)<\/div>/) || [])[1] || ''
+    ).split('\n').map((s) => s.trim()).filter(Boolean).pop() || ''
+    const priceText = isFree ? 'Бесплатно' : (discountedText || plainText)
+    const releaseDate = cleanSteamHtmlToText((chunk.match(/search_released[^>]*>([\s\S]*?)<\/div>/) || [])[1] || '')
+
+    seen.add(appId)
+    items.push({
+      steamAppId: appId,
+      title,
+      image,
+      headerImage: image,
+      description: '',
+      releaseDate,
+      developers: [],
+      publishers: [],
+      genres: [],
+      tags: [],
+      screenshots: [],
+      platforms: [],
+      supportedLanguages: '',
+      isFree,
+      price: isFree ? null : price,
+      priceText,
+      discountPercent,
+      currency,
+      regionAvailable: true,
+      steamRecommendationCount: 0,
+      metacritic: null,
+      storeUrl: 'https://store.steampowered.com/app/' + appId + '/'
+    })
+  }
+  return items
 }
 
 function parseSteamDate(value) {

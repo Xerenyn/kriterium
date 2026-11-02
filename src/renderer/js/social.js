@@ -9,6 +9,16 @@ window.K = window.K || {};
   let catalogSearch = ''
   let catalogSection = 'featured'
   let catalogRegion = 'ru'
+  let catalogToken = 0
+  let catalogStart = 0
+  let catalogTotal = 0
+  let catalogHasMore = false
+  let catalogLoading = false
+  let catalogGames = []
+  let catalogObserver = null
+  let catalogPendingReset = false
+  let catalogAutoSkips = 0
+  const CATALOG_PAGE_SIZE = 25
   let profileSearch = ''
   let accountMode = 'signin'
   let searchTimer = null
@@ -371,6 +381,15 @@ window.K = window.K || {};
       }
     })
     if (isDeveloper) {
+      U.$('#dev-reviews-search', view)?.addEventListener('input', (event) => {
+        devReviewsSearch = event.target.value
+        renderDeveloperReviewsList(view)
+      })
+      U.$$('[data-dev-filter]', view).forEach((btn) => btn.addEventListener('click', () => {
+        devReviewsFilter = btn.dataset.devFilter
+        U.$$('[data-dev-filter]', view).forEach((b) => b.classList.toggle('active', b === btn))
+        loadDeveloperReviews(view)
+      }))
       loadModerationQueue(view)
       loadDeveloperReviews(view)
     }
@@ -615,6 +634,7 @@ window.K = window.K || {};
   ]
 
   function renderCatalog(view) {
+    if (catalogObserver) { catalogObserver.disconnect(); catalogObserver = null }
     const sections = [
       ['featured', 'Популярные и культовые'],
       ['top_sellers', 'Лидеры продаж Steam'],
@@ -641,6 +661,7 @@ window.K = window.K || {};
         '<button class="chip' + (catalogSearch.toLowerCase() === q.toLowerCase() ? ' accent' : '') + '" style="cursor:pointer" data-quick-tag="' + U.attr(q) + '">' + U.esc(label) + '</button>'
       ).join('') + '</div></div>' +
       '<div id="steam-results"></div>' +
+      '<div id="steam-more" class="catalog-more"></div>' +
       '<div class="tiny dim" style="margin-top:16px;line-height:1.6">Каждая страница игры привязана к Steam App ID — оценки разных участников собираются на одной общей странице игры.</div>'
     view.innerHTML = shell(html)
 
@@ -676,17 +697,8 @@ window.K = window.K || {};
     U.$('#steam-region', view)?.addEventListener('change', async (event) => {
       catalogRegion = event.target.value
       try { await api.cloud.setSteamRegion(catalogRegion) } catch { /* keep local choice */ }
-      loadCatalogResults(view)
+      loadCatalogResults(view, { reset: true })
     })
-    U.$('#dev-reviews-search', view)?.addEventListener('input', (event) => {
-      devReviewsSearch = event.target.value
-      renderDeveloperReviewsList(view)
-    })
-    U.$$('[data-dev-filter]', view).forEach((btn) => btn.addEventListener('click', () => {
-      devReviewsFilter = btn.dataset.devFilter
-      U.$$('[data-dev-filter]', view).forEach((b) => b.classList.toggle('active', b === btn))
-      loadDeveloperReviews(view)
-    }))
 
     api.cloud.getSteamRegion().then((region) => {
       if (!view.isConnected) return
@@ -695,50 +707,170 @@ window.K = window.K || {};
         const select = U.$('#steam-region', view)
         if (select) select.value = region
       }
-      loadCatalogResults(view)
-    }).catch(() => loadCatalogResults(view))
+      loadCatalogResults(view, { reset: true })
+    }).catch(() => loadCatalogResults(view, { reset: true }))
   }
 
-  async function loadCatalogResults(view) {
+  async function loadCatalogResults(view, options = {}) {
     const target = U.$('#steam-results', view)
     const count = U.$('#steam-result-count', view)
+    const more = U.$('#steam-more', view)
     if (!target) return
-    target.innerHTML = '<div class="card pad small muted">Загружаем игры, жанры, теги и скриншоты из Steam…</div>'
+    const reset = options.reset !== false
+    if (reset) {
+      catalogToken++
+      catalogStart = 0
+      catalogTotal = 0
+      catalogHasMore = false
+      catalogGames = []
+      catalogAutoSkips = 0
+      target.innerHTML = '<div class="card pad small muted">Загружаем каталог Steam…</div>'
+      if (more) more.innerHTML = ''
+    }
+    if (catalogLoading) {
+      // Сброс во время загрузки: результат текущего запроса уже устарел,
+      // поэтому перезапускаем его сразу после завершения.
+      if (reset) catalogPendingReset = true
+      return
+    }
+    catalogPendingReset = false
+
+    const token = catalogToken
     const requestRegion = catalogRegion
+    const requestSearch = catalogSearch
+    const requestSection = catalogSection
+    catalogLoading = true
+    if (more && !reset) more.innerHTML = '<div class="card pad small muted">Загружаем ещё игры…</div>'
     try {
-      const results = catalogSearch.length >= 2
-        ? await api.cloud.steamSearch(catalogSearch, requestRegion)
-        : await api.cloud.steamFeatured(catalogSection, requestRegion)
-      const commMap = await api.cloud.communityBySteamIds(results.map((r) => r.steamAppId)).catch(() => ({}))
-      results.forEach((r) => {
-        if (commMap && commMap[r.steamAppId]) r.community = commMap[r.steamAppId]
+      const page = await api.cloud.steamBrowse({
+        query: requestSearch,
+        section: requestSection,
+        start: catalogStart,
+        count: CATALOG_PAGE_SIZE,
+        cc: requestRegion
       })
-      if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion) return
-      if (count) count.textContent = results.length + ' ' + U.plural(results.length, 'игра', 'игры', 'игр') + ' · ' + regionLabel(requestRegion)
-      target.innerHTML = results.length
-        ? '<div class="steam-catalog-grid">' + results.map((game) => steamResultCard(game)).join('') + '</div>'
-        : '<div class="empty"><h3>Игры не найдены</h3><p>Попробуйте другое название или выберите подборку выше.</p></div>'
-      bindCatalogScreenshots(target)
-      bindReviewInspectors(target, results)
-      results.forEach((game) => {
-        if (game.priceText || game.regionAvailable === false || game.isFree) return
-        api.cloud.steamDetails(game.steamAppId, requestRegion).then((details) => {
-          if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion) return
+      const rawItems = Array.isArray(page?.items) ? page.items : []
+      const knownIds = new Set(catalogGames.map((game) => game.steamAppId))
+      const items = rawItems.filter((game) => !knownIds.has(game.steamAppId))
+      if (rawItems.length && !items.length && page?.hasMore && catalogAutoSkips < 4) {
+        // Steam иногда отдаёт пересекающиеся страницы — пропускаем пустую и идём дальше.
+        catalogAutoSkips++
+        catalogStart += rawItems.length
+        queueMicrotask(() => {
+          if (token === catalogToken && target.isConnected && location.hash === '#/catalog') {
+            loadCatalogResults(view, { reset: false })
+          }
+        })
+        return
+      }
+      if (items.length) {
+        const commMap = await api.cloud.communityBySteamIds(items.map((r) => r.steamAppId)).catch(() => ({}))
+        items.forEach((r) => {
+          if (commMap && commMap[r.steamAppId]) r.community = commMap[r.steamAppId]
+        })
+      }
+      if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion ||
+          catalogSearch !== requestSearch || catalogSection !== requestSection || token !== catalogToken) return
+
+      const isFirstPage = catalogStart === 0
+      catalogGames = catalogGames.concat(items)
+      catalogStart += rawItems.length
+      catalogTotal = Math.max(Number(page?.total) || 0, catalogStart)
+      catalogHasMore = !!page?.hasMore && rawItems.length > 0 && items.length > 0
+      if (count) count.textContent = catalogGames.length + ' из ' + catalogTotal + ' · ' + regionLabel(requestRegion)
+
+      if (isFirstPage) {
+        target.innerHTML = items.length
+          ? '<div class="steam-catalog-grid" id="steam-grid"></div>'
+          : '<div class="empty"><h3>Игры не найдены</h3><p>Попробуйте другое название или выберите подборку выше.</p></div>'
+      }
+      const grid = U.$('#steam-grid', target)
+      if (grid && items.length) {
+        const fragment = document.createDocumentFragment()
+        const holder = document.createElement('div')
+        holder.innerHTML = items.map((game) => steamResultCard(game)).join('')
+        while (holder.firstElementChild) fragment.appendChild(holder.firstElementChild)
+        bindCatalogScreenshots(fragment)
+        bindReviewInspectors(fragment, items)
+        grid.appendChild(fragment)
+        if (isFirstPage) enrichFirstCatalogPage(target, items, requestRegion, token).catch(() => {})
+      }
+      updateCatalogMore(view)
+    } catch (err) {
+      if (reset) {
+        target.innerHTML = '<div class="empty"><h3>Не удалось загрузить каталог Steam</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
+      } else if (more) {
+        more.innerHTML = '<div class="card pad small muted">Не удалось загрузить следующую страницу. <button class="btn sm" id="steam-retry-more">Повторить</button></div>'
+        U.$('#steam-retry-more', more)?.addEventListener('click', () => loadCatalogResults(view, { reset: false }))
+      }
+    } finally {
+      catalogLoading = false
+      if (token === catalogToken) {
+        updateCatalogMore(view)
+      } else if (catalogPendingReset) {
+        catalogPendingReset = false
+        if (target.isConnected && location.hash === '#/catalog') loadCatalogResults(view, { reset: false })
+      }
+    }
+  }
+
+  async function enrichFirstCatalogPage(target, items, requestRegion, token) {
+    // Первая страница получает расширенные карточки (жанры, теги, скриншоты).
+    // Дальше каталог листается бесконечно без лишних запросов к Steam.
+    const queue = items.slice(0, 12).filter((game) => !game.genres?.length || !game.priceText)
+    let cursor = 0
+    const worker = async () => {
+      while (cursor < queue.length) {
+        const game = queue[cursor++]
+        try {
+          const details = await api.cloud.steamDetails(game.steamAppId, requestRegion)
+          if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion || token !== catalogToken) return
           const cardEl = U.$('[data-steam-card="' + game.steamAppId + '"]', target)
-          if (!cardEl) return
+          if (!cardEl) continue
           const merged = Object.assign({}, game, details, { community: game.community })
-          const tmp = document.createElement('div')
-          tmp.innerHTML = steamResultCard(merged)
-          const fresh = tmp.firstElementChild
+          const holder = document.createElement('div')
+          holder.innerHTML = steamResultCard(merged)
+          const fresh = holder.firstElementChild
           if (fresh) {
-            cardEl.replaceWith(fresh)
             bindCatalogScreenshots(fresh)
             bindReviewInspectors(fresh, [merged])
+            cardEl.replaceWith(fresh)
           }
-        }).catch(() => {})
-      })
-    } catch (err) {
-      target.innerHTML = '<div class="empty"><h3>Не удалось загрузить каталог Steam</h3><p>' + U.esc(err.message || String(err)) + '</p></div>'
+        } catch { /* compact card remains usable */ }
+      }
+    }
+    await Promise.all([worker(), worker(), worker(), worker()])
+  }
+
+  function updateCatalogMore(view) {
+    const more = U.$('#steam-more', view)
+    if (!more || !more.isConnected) return
+    if (catalogLoading) {
+      more.innerHTML = '<div class="card pad small muted">Загружаем ещё игры…</div>'
+      return
+    }
+    if (catalogHasMore) {
+      more.innerHTML = '<div class="catalog-more-inner"><div id="steam-sentinel" aria-hidden="true"></div>' +
+        '<button class="btn" id="steam-load-more">Показать ещё ' + CATALOG_PAGE_SIZE + '</button>' +
+        '<span class="tiny dim">Загружено ' + catalogGames.length + ' из ' + catalogTotal + '</span></div>'
+      U.$('#steam-load-more', more)?.addEventListener('click', () => loadCatalogResults(view, { reset: false }))
+      const sentinel = U.$('#steam-sentinel', more)
+      if (sentinel) {
+        if (catalogObserver) catalogObserver.disconnect()
+        catalogObserver = new IntersectionObserver((entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            catalogObserver?.disconnect()
+            catalogObserver = null
+            loadCatalogResults(view, { reset: false })
+          }
+        }, { rootMargin: '700px 0px' })
+        catalogObserver.observe(sentinel)
+      }
+    } else if (catalogGames.length) {
+      more.innerHTML = '<div class="tiny dim" style="text-align:center;padding:12px">Показаны все ' + catalogGames.length + ' ' +
+        U.plural(catalogGames.length, 'игра', 'игры', 'игр') + ' по этому запросу</div>'
+    } else {
+      more.innerHTML = ''
     }
   }
 

@@ -47,11 +47,18 @@ window.K = window.K || {};
     },
 
     async reloadCloudPatches(shouldRender) {
+      const prevJson = JSON.stringify(this.cloudPatches || [])
+      const canAutoRender = () => {
+        if (!shouldRender || !this.booted) return false
+        if (JSON.stringify(this.cloudPatches || []) === prevJson) return false
+        const route = parseRoute()
+        return !['catalog', 'new', 'review', 'edit', 'account'].includes(route.name)
+      }
       if (!this.cloudStatus?.configured) {
         this.cloudPatches = this.cloudPatches.filter((patch) => patch.is_enabled)
         try { localStorage.setItem('kriterium.officialPatches', JSON.stringify(this.cloudPatches)) } catch { /* local cache is optional */ }
         this.invalidate()
-        if (shouldRender && this.booted) this.render()
+        if (canAutoRender()) this.render()
         return []
       }
       try {
@@ -62,7 +69,7 @@ window.K = window.K || {};
         if (!this.cloudStatus?.signedIn) this.cloudPatches = this.cloudPatches.filter((patch) => patch.is_enabled)
       }
       this.invalidate()
-      if (shouldRender && this.booted) this.render()
+      if (canAutoRender()) this.render()
       return this.cloudPatches
     },
 

@@ -197,6 +197,7 @@ function registerIpc() {
   ipcMain.handle('cloud:listProfiles', (_e, query) => cloud.listPublicProfiles(query))
   ipcMain.handle('cloud:publicProfile', (_e, handle) => cloud.publicProfile(handle))
   ipcMain.handle('cloud:steamSearch', (_e, query, cc) => cloud.searchSteam(query, cc))
+  ipcMain.handle('cloud:steamBrowse', (_e, input) => cloud.steamBrowse(input))
   ipcMain.handle('cloud:steamFeatured', (_e, section, cc) => cloud.steamFeatured(section, cc))
   ipcMain.handle('cloud:steamDetails', (_e, steamAppId, cc) => cloud.steamDetails(steamAppId, cc))
   ipcMain.handle('cloud:getSteamRegion', () => cloud.getSteamRegion())
