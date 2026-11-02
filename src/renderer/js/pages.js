@@ -84,24 +84,25 @@ window.K = window.K || {};
   function renderProfile(view) {
     const stats = allStats()
     const profile = app().profile
-    const bands = { S: 0, A: 0, B: 0, C: 0, D: 0, E: 0 }
+    const gradeDefs = app().catalog(null).grades || []
+    const bands = new Map(gradeDefs.map((g) => [g.label, { label: g.label, color: g.color, count: 0 }]))
     for (const item of stats.scoredItems) {
-      if (item.score.grade) bands[item.score.grade.letter] = (bands[item.score.grade.letter] || 0) + 1
+      const g = item.score.grade
+      if (g && bands.has(g.label)) bands.get(g.label).count += 1
     }
 
-    let html = pageHead('Аккаунт', 'Мой профиль', 'Профиль и все оценки хранятся только на этом компьютере.',
+    let html = pageHead('Профиль и аккаунт', 'Мой профиль', 'Ваша личная статистика, публичный профиль сообщества и управление данными.',
       '<button class="btn ghost" data-action="edit-profile">' + U.icon('edit', 14) + ' Изменить</button>' +
       '<button class="btn primary" data-route="#/new">' + U.icon('plus', 14) + ' Оценить игру</button>')
 
-    html += '<div class="card profile-hero"><div class="avatar-big">' + U.esc(profile.avatar || '🎮') + '</div>' +
-      '<div class="grow"><h2>' + U.esc(profile.nickname || 'Игрок') + '</h2>' +
-      '<div class="tagline">' + U.esc(profile.tagline || 'Без описания') + '</div>' +
-      '<div class="row wrap" id="local-profile-chips" style="margin-top:9px"><span class="chip accent">локальный аккаунт</span>' +
+    html += '<div class="card profile-hero"><div class="avatar-big" id="profile-hero-avatar">' + U.esc(profile.avatar || '🎮') + '</div>' +
+      '<div class="grow"><h2 id="profile-hero-name">' + U.esc(profile.nickname || 'Игрок') + '</h2>' +
+      '<div class="tagline" id="profile-hero-sub">' + U.esc(profile.tagline || 'Без описания') + '</div>' +
+      '<div class="row wrap" id="local-profile-chips" style="margin-top:9px"><span class="chip accent">локальный профиль</span>' +
       '<span class="chip">с ' + U.esc(U.formatDate(profile.createdAt)) + '</span>' +
       '<span class="chip">' + stats.played + ' ' + U.plural(stats.played, 'игра', 'игры', 'игр') + '</span></div></div>' +
       '<div style="text-align:right">' + (stats.average == null ? '<div class="stat-value">—</div>' : '<div class="stat-value" style="color:' + U.scoreColor(stats.average) + '">' + U.formatNumber(stats.average) + '<small>/100</small></div>') +
-      '<div class="stat-label">средний балл</div></div></div>' +
-      '<div id="local-profile-achievements"></div>'
+      '<div class="stat-label">средний балл</div></div></div>'
 
     html += '<div class="stats">' +
       '<div class="stat"><div class="stat-value">' + stats.played + '</div><div class="stat-label">игр в профиле</div></div>' +
@@ -116,7 +117,7 @@ window.K = window.K || {};
       '<div class="card-sub">Средний результат по всем оценкам (из 10)</div></div></div>' +
       (Object.keys(stats.tiers).length ? tierAveragesHtml(stats) : '<div class="small dim">Пока нет оценок.</div>') +
       '<div class="divider"></div><div class="row wrap" style="gap:6px">' +
-      Object.entries(bands).filter(([_, n]) => n > 0).map(([letter, n]) => '<span class="chip">' + letter + ' · ' + n + '</span>').join('') +
+      Array.from(bands.values()).filter((b) => b.count > 0).map((b) => '<span class="chip" style="color:' + U.attr(b.color) + '">' + U.esc(b.label) + ' · ' + b.count + '</span>').join('') +
       '</div></div>'
 
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Жанры</div>' +
@@ -133,7 +134,9 @@ window.K = window.K || {};
     }
     html += '</div></div>'
 
-    html += '<div class="subhead"><h3>Данные</h3><div class="line"></div></div>'
+    html += '<div id="profile-account-mount"></div>'
+
+    html += '<div class="subhead"><h3>Резервная копия и данные</h3><div class="line"></div></div>'
     html += '<div class="card pad"><div class="row wrap" style="gap:8px">' +
       '<button class="btn" data-action="export-json">' + U.icon('export', 14) + ' Экспорт профиля (.json)</button>' +
       '<button class="btn" data-action="export-csv">' + U.icon('export', 14) + ' Таблица оценок (.csv)</button>' +
@@ -143,37 +146,10 @@ window.K = window.K || {};
 
     view.innerHTML = shell(html)
 
-    api.cloud.status().then(async (st) => {
-      if (!st?.signedIn || !view.isConnected || location.hash !== '#/profile') return
-      const [cloudProfile, isDev] = await Promise.all([
-        api.cloud.myProfile().catch(() => null),
-        api.cloud.isDeveloper().catch(() => false)
-      ])
-      if (!view.isConnected || location.hash !== '#/profile') return
-      const badges = Array.isArray(cloudProfile?.badges) ? cloudProfile.badges.slice() : []
-      if (isDev && !badges.some((b) => b && b.id === 'developer_kriterium')) {
-        badges.unshift({
-          id: 'developer_kriterium',
-          title: 'Разработчик Критериум',
-          description: 'Создатель и единственный владелец платформы «Критериум»',
-          icon: '👑'
-        })
-      }
-      if (!badges.length) return
-      const chips = U.$('#local-profile-chips', view)
-      if (chips) {
-        chips.insertAdjacentHTML('afterbegin', badges.map((b) =>
-          '<span class="ach-pill" title="' + U.attr(b.description || b.title) + '">' + U.esc((b.icon || '👑') + ' ' + b.title) + '</span>'
-        ).join(''))
-      }
-      const box = U.$('#local-profile-achievements', view)
-      if (box) {
-        box.innerHTML = '<div style="margin-bottom:16px">' + badges.map((b) =>
-          '<div class="ach-card"><div class="ach-icon">' + U.esc(b.icon || '👑') + '</div><div><div class="ach-title">' + U.esc(b.title) + '</div>' +
-          (b.description ? '<div class="ach-desc">' + U.esc(b.description) + '</div>' : '') + '</div></div>'
-        ).join('') + '</div>'
-      }
-    }).catch(() => {})
+    const accountMount = U.$('#profile-account-mount', view)
+    if (accountMount && window.K.Social?.renderAccount) {
+      window.K.Social.renderAccount(accountMount, view)
+    }
 
     U.$('[data-action="edit-profile"]', view).addEventListener('click', openProfileEditor)
     U.$('[data-action="export-json"]', view).addEventListener('click', exportJson)
@@ -222,13 +198,29 @@ window.K = window.K || {};
         U.$('[data-cancel]', root).addEventListener('click', close)
         U.$('[data-save]', root).addEventListener('click', async () => {
           const nickname = U.$('#pf-name', root).value.trim()
+          const tagline = U.$('#pf-tag', root).value.trim()
+          const safeAvatar = avatar || '🎮'
           if (!nickname) { U.toast('Никнейм не может быть пустым', 'bad'); return }
           await api.profile.save({
             nickname,
-            tagline: U.$('#pf-tag', root).value.trim(),
-            avatar: avatar || '🎮',
+            tagline,
+            avatar: safeAvatar,
             accent
           })
+          if (app().cloudStatus?.signedIn) {
+            try {
+              const current = await api.cloud.myProfile().catch(() => null)
+              if (current?.handle) {
+                await api.cloud.updateMyProfile({
+                  displayName: nickname,
+                  handle: current.handle,
+                  bio: tagline || current.bio || '',
+                  avatar: safeAvatar,
+                  isPublic: current.is_public !== false
+                })
+              }
+            } catch { /* cloud sync is best-effort here */ }
+          }
           close()
           await app().refresh()
           U.toast('Профиль обновлён', 'good')

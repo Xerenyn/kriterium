@@ -1028,11 +1028,11 @@
     { "key": "notes", "label": "Заметки", "type": "textarea", "placeholder": "Свободные наблюдения, спойлеры, детали" }
   ],
   "grades": [
-    { "min": 90, "letter": "S", "label": "Выдающаяся", "color": "#8fae9a" },
-    { "min": 80, "letter": "A", "label": "Отличная", "color": "#a3ae86" },
-    { "min": 70, "letter": "B", "label": "Хорошая", "color": "#b8ad84" },
-    { "min": 60, "letter": "C", "label": "Крепкая", "color": "#9c8e64" },
-    { "min": 45, "letter": "D", "label": "Неровная", "color": "#b8886f" },
-    { "min": 0, "letter": "E", "label": "Слабая", "color": "#a9675f" }
+    { "min": 90, "letter": "90+", "label": "Шедевр", "color": "#8fae9a" },
+    { "min": 80, "letter": "80+", "label": "Великолепно", "color": "#a3ae86" },
+    { "min": 70, "letter": "70+", "label": "Хорошо", "color": "#b8ad84" },
+    { "min": 60, "letter": "60+", "label": "Достойно", "color": "#9c8e64" },
+    { "min": 45, "letter": "45+", "label": "Посредственно", "color": "#b8886f" },
+    { "min": 0, "letter": "<45", "label": "Слабо", "color": "#a9675f" }
   ]
 }

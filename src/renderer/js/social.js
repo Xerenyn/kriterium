@@ -96,20 +96,27 @@ window.K = window.K || {};
 
   /* ---------- аккаунт ---------- */
 
-  async function renderAccount(view) {
-    view.innerHTML = shell(head('Сообщество', 'Аккаунт', 'Подключитесь к общей базе, чтобы публиковать оценки и смотреть профили участников.') +
-      '<div class="card pad"><div class="small muted">Загрузка…</div></div>')
-
-    const status = await getStatus()
-    if (location.hash !== '#/account') return
-    if (!status.configured) return renderCloudSetup(view, status)
-    if (status.signedIn) return renderSignedIn(view, status)
-    return renderAuthForm(view, status)
+  function isProfileOrAccountRoute() {
+    return location.hash === '#/profile' || location.hash === '#/account'
   }
 
-  function renderCloudSetup(view, status) {
+  async function renderAccount(mountEl, pageView) {
+    const target = mountEl || U.$('#view')
+    const rootView = pageView || target
+    if (!target) return
+    target.innerHTML = '<div class="subhead"><h3>Аккаунт и сообщество</h3><div class="line"></div></div>' +
+      '<div class="card pad"><div class="small muted">Загрузка аккаунта…</div></div>'
+
+    const status = await getStatus()
+    if (!target.isConnected || !isProfileOrAccountRoute()) return
+    if (!status.configured) return renderCloudSetup(target, status, rootView)
+    if (status.signedIn) return renderSignedIn(target, status, rootView)
+    return renderAuthForm(target, status, rootView)
+  }
+
+  function renderCloudSetup(view, status, rootView) {
     const urlValue = U.attr(status.url || '')
-    const html = head('Сообщество', 'Подключение общей базы', 'Сначала укажите проект Supabase. Он будет хранить аккаунты, страницы игр и оценки всех участников.') +
+    const html = '<div class="subhead"><h3>Подключение общей базы</h3><div class="line"></div></div>' +
       (status.error ? '<div class="chip bad" style="margin-bottom:14px">' + U.esc(status.error) + '</div>' : '') +
       '<div class="card pad" style="max-width:760px">' + cardTitle('Настройка Supabase', 'URL и публичный ключ проекта; ключ хранится локально на этом компьютере.') +
       '<div class="form-grid">' +
@@ -119,7 +126,7 @@ window.K = window.K || {};
       '<span class="tiny dim">Не вставляйте сюда service_role key.</span><span class="spacer"></span>' +
       '<button class="btn ghost sm" id="cloud-download-schema">Скачать SQL-схему</button></div>' +
       '<div class="divider"></div><div class="tiny dim" style="line-height:1.65">Сначала создайте проект Supabase, скачайте SQL-схему и выполните её в SQL Editor. После подключения можно будет создать аккаунт. Инструкция находится в README.</div></div>'
-    view.innerHTML = shell(html)
+    view.innerHTML = html
     U.$('#cloud-save', view).addEventListener('click', async () => {
       const button = U.$('#cloud-save', view)
       button.disabled = true
@@ -129,7 +136,7 @@ window.K = window.K || {};
         window.K.app.cloudStatus = updated
         await window.K.app.reloadCloudPatches(false)
         U.toast('Общая база подключена', 'good')
-        renderAccount(view)
+        renderAccount(view, rootView)
       } catch (err) {
         U.toast(err.message || 'Не удалось подключиться', 'bad')
         button.disabled = false
@@ -149,32 +156,31 @@ window.K = window.K || {};
     })
   }
 
-  function renderAuthForm(view, status) {
+  function renderAuthForm(view, status, rootView) {
     const registering = accountMode === 'signup'
-    const html = head('Сообщество', 'Аккаунт', 'Один аккаунт — ваши оценки, профиль и отзывы на страницах игр.') +
+    const html = '<div class="subhead"><h3>Аккаунт сообщества</h3><div class="line"></div><span class="tiny dim">публикация рецензий и общий профиль</span></div>' +
       '<div class="card pad" style="max-width:650px">' +
-      cardTitle(registering ? 'Создать аккаунт' : 'Войти', 'Подключено: ' + status.url) +
+      cardTitle(registering ? 'Создать аккаунт' : 'Войти в аккаунт', 'Войдите, чтобы публиковать оценки в общем каталоге и открыть свой профиль другим участникам.') +
       '<div class="tabs" style="margin-bottom:16px"><button class="tab' + (!registering ? ' active' : '') + '" data-mode="signin">Войти</button>' +
       '<button class="tab' + (registering ? ' active' : '') + '" data-mode="signup">Регистрация</button></div>' +
       '<div class="form-grid">' +
-      (registering ? '<div class="field span4"><label>Имя в профиле</label><input id="cloud-display" type="text" maxlength="60" placeholder="Как вас будут видеть другие"></div>' : '') +
+      (registering ? '<div class="field span4"><label>Имя в профиле</label><input id="cloud-display" type="text" maxlength="60" value="' + U.attr(window.K.app.profile?.nickname || '') + '" placeholder="Как вас будут видеть другие"></div>' : '') +
       '<div class="field span4"><label>Электронная почта</label><input id="cloud-email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com"></div>' +
       '<div class="field span4"><label>Пароль (не короче 10 символов)</label><input id="cloud-password" type="password" minlength="10" maxlength="128" autocomplete="' + (registering ? 'new-password' : 'current-password') + '"></div>' +
       '</div><div class="row wrap" style="margin-top:14px"><button class="btn primary" id="cloud-submit">' + (registering ? 'Создать аккаунт' : 'Войти') + '</button>' +
-      '<span class="spacer"></span><button class="btn ghost sm" id="cloud-change-project">Сменить проект</button></div>' +
+      '<span class="spacer"></span><button class="btn ghost sm" id="cloud-change-project">Параметры подключения</button></div>' +
       '<p class="tiny dim" style="margin-top:12px;line-height:1.6">Пароль отправляется только в Supabase по HTTPS. Сессия шифруется средствами Windows и хранится локально.</p></div>'
-    view.innerHTML = shell(html)
+    view.innerHTML = html
 
     U.$$('[data-mode]', view).forEach((button) => button.addEventListener('click', () => {
       accountMode = button.dataset.mode
-      renderAuthForm(view, status)
+      renderAuthForm(view, status, rootView)
     }))
     U.$('#cloud-change-project', view).addEventListener('click', async () => {
       await api.cloud.signOut()
       window.K.app.cloudStatus = await api.cloud.status()
       await window.K.app.reloadCloudPatches(false)
-      // Keep the current project URL visible; the key must be entered again if project changes.
-      renderCloudSetup(view, { configured: false, url: status.url })
+      renderCloudSetup(view, { configured: false, url: status.url }, rootView)
     })
     U.$('#cloud-submit', view).addEventListener('click', async () => {
       const button = U.$('#cloud-submit', view)
@@ -191,7 +197,7 @@ window.K = window.K || {};
           if (result.confirmationRequired) {
             U.toast('Проверьте почту и подтвердите регистрацию', 'good')
             accountMode = 'signin'
-            renderAuthForm(view, status)
+            renderAuthForm(view, status, rootView)
             return
           }
         } else {
@@ -200,7 +206,8 @@ window.K = window.K || {};
         window.K.app.cloudStatus = await api.cloud.status()
         await window.K.app.reloadCloudPatches(false)
         U.toast(registering ? 'Аккаунт создан' : 'Вы вошли', 'good')
-        renderAccount(view)
+        if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
+        else renderAccount(view, rootView)
       } catch (err) {
         U.toast(err.message || 'Не удалось выполнить вход', 'bad')
         button.disabled = false
@@ -302,7 +309,7 @@ window.K = window.K || {};
     ).join('') + '</div>'
   }
 
-  async function renderSignedIn(view, status) {
+  async function renderSignedIn(view, status, rootView) {
     let profile = null
     let isDeveloper = false
     let profileError = ''
@@ -311,22 +318,42 @@ window.K = window.K || {};
     } catch (err) {
       profileError = err.message || String(err)
     }
-    if (!view.isConnected || location.hash !== '#/account') return
+    if (!view.isConnected || !isProfileOrAccountRoute()) return
     const role = isDeveloper ? '<span class="chip accent">Разработчик приложения</span>' : '<span class="chip good">Участник</span>'
     const pills = badgePillsHtml(profile, isDeveloper)
-    const html = head('Сообщество', 'Ваш аккаунт', 'Этот аккаунт используется для общих страниц игр и публикации оценок.') +
+
+    // Обновляем единую шапку профиля сверху, чтобы не дублировать карточку героя.
+    if (rootView) {
+      const heroAvatar = U.$('#profile-hero-avatar', rootView)
+      if (heroAvatar && profile?.avatar) heroAvatar.textContent = profile.avatar
+      const heroName = U.$('#profile-hero-name', rootView)
+      if (heroName && profile?.display_name) heroName.textContent = profile.display_name
+      const heroSub = U.$('#profile-hero-sub', rootView)
+      if (heroSub) {
+        const handlePart = profile?.handle ? '@' + profile.handle : ''
+        const emailPart = status.user?.email || ''
+        const bioPart = profile?.bio || window.K.app.profile?.tagline || ''
+        heroSub.textContent = [handlePart, emailPart, bioPart].filter(Boolean).join(' · ') || 'Без описания'
+      }
+      const heroChips = U.$('#local-profile-chips', rootView)
+      if (heroChips) {
+        const played = (window.K.app.games || []).length
+        heroChips.innerHTML = pills + role +
+          '<span class="chip">' + (profile?.is_public ? 'профиль открыт' : 'профиль закрыт') + '</span>' +
+          '<span class="chip">' + played + ' ' + U.plural(played, 'игра', 'игры', 'игр') + '</span>'
+      }
+    }
+
+    const html = '<div class="subhead"><h3>Аккаунт и сообщество</h3><div class="line"></div><span class="tiny dim">' + U.esc(status.user?.email || '') + '</span></div>' +
       (profileError ? '<div class="chip bad" style="margin-bottom:14px">' + U.esc(profileError) + '</div>' : '') +
-      '<div class="card profile-hero"><div class="avatar-big">' + U.esc(profile?.avatar || '🎮') + '</div>' +
-      '<div class="grow"><h2>' + U.esc(profile?.display_name || 'Игрок') + '</h2>' +
-      '<div class="tagline">@' + U.esc(profile?.handle || 'профиль не создан') + ' · ' + U.esc(status.user?.email || '') + '</div>' +
-      '<div class="row wrap" style="margin-top:9px">' + pills + role + '<span class="chip">' + (profile?.is_public ? 'профиль открыт' : 'профиль закрыт') + '</span></div></div>' +
-      '<div class="row wrap"><button class="btn" data-route="#/community">Участники</button><button class="btn ghost" id="cloud-signout">Выйти</button></div></div>' +
-      '<div class="two-col" style="margin-top:16px"><div class="card pad">' + cardTitle('Публичный профиль', 'Другие участники увидят его в списке, если он открыт.') +
-      '<div class="form-grid"><div class="field span2"><label>Имя</label><input id="pub-display" type="text" maxlength="60" value="' + U.attr(profile?.display_name || '') + '"></div>' +
-      '<div class="field span2"><label>Адрес профиля</label><input id="pub-handle" type="text" maxlength="24" value="' + U.attr(profile?.handle || '') + '" placeholder="латиница, цифры, _"></div>' +
-      '<div class="field span4"><label>О себе</label><textarea id="pub-bio" maxlength="280" placeholder="Коротко о ваших игровых вкусах">' + U.esc(profile?.bio || '') + '</textarea></div>' +
+      '<div class="two-col"><div class="card pad">' + cardTitle('Публичный профиль', 'Синхронизируется с локальным профилем и виден другим участникам, если открыт.') +
+      '<div class="form-grid"><div class="field span2"><label>Имя</label><input id="pub-display" type="text" maxlength="60" value="' + U.attr(profile?.display_name || window.K.app.profile?.nickname || '') + '"></div>' +
+      '<div class="field span2"><label>Адрес профиля (@handle)</label><input id="pub-handle" type="text" maxlength="24" value="' + U.attr(profile?.handle || '') + '" placeholder="латиница, цифры, _"></div>' +
+      '<div class="field span4"><label>О себе</label><textarea id="pub-bio" maxlength="280" placeholder="Коротко о ваших игровых вкусах">' + U.esc(profile?.bio || window.K.app.profile?.tagline || '') + '</textarea></div>' +
       '</div><label class="row small muted" style="margin-top:10px"><input id="pub-open" type="checkbox" style="accent-color:var(--accent)"' + (profile?.is_public ? ' checked' : '') + '> Показывать профиль и мои публичные оценки другим участникам</label>' +
-      '<button class="btn primary" id="pub-save" style="margin-top:14px">Сохранить профиль</button></div>' +
+      '<div class="row wrap" style="gap:8px;margin-top:14px"><button class="btn primary" id="pub-save">Сохранить профиль</button>' +
+      (profile?.handle ? '<button class="btn ghost" data-route="#/person/' + U.attr(profile.handle) + '">Как видят другие</button>' : '') +
+      '<span class="spacer"></span><button class="btn ghost" id="cloud-signout">Выйти из аккаунта</button></div></div>' +
       '<div style="display:flex;flex-direction:column;gap:14px"><div class="card pad">' + cardTitle('Достижения в профиле', 'Выдаются сервером и видны всем участникам.') +
       badgeCardsHtml(profile, isDeveloper) + '</div>' +
       '<div class="card pad">' + cardTitle('Моя роль', 'Права разработчика назначает только владелец проекта Supabase.') +
@@ -345,12 +372,13 @@ window.K = window.K || {};
           '<button class="tab' + (devReviewsFilter === id ? ' active' : '') + '" data-dev-filter="' + id + '">' + U.esc(label) + '</button>'
         ).join('') + '</div>' +
         '<div id="dev-reviews-list"><div class="small muted">Загружаем рецензии…</div></div></div>' : '')
-    view.innerHTML = shell(html)
+    view.innerHTML = html
     U.$('#cloud-signout', view).addEventListener('click', async () => {
       await api.cloud.signOut()
       window.K.app.cloudStatus = await api.cloud.status()
       await window.K.app.reloadCloudPatches(false)
-      renderAccount(view)
+      if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
+      else renderAccount(view, rootView)
     })
     U.$('#cloud-download-developer-sql', view)?.addEventListener('click', async () => {
       try {
@@ -366,15 +394,18 @@ window.K = window.K || {};
     U.$('#pub-save', view).addEventListener('click', async () => {
       const button = U.$('#pub-save', view)
       button.disabled = true
+      const displayName = U.$('#pub-display', view).value.trim()
+      const handle = U.$('#pub-handle', view).value.trim()
+      const bio = U.$('#pub-bio', view).value.trim()
+      const isPublic = U.$('#pub-open', view).checked
       try {
-        profile = await api.cloud.updateMyProfile({
-          displayName: U.$('#pub-display', view).value,
-          handle: U.$('#pub-handle', view).value,
-          bio: U.$('#pub-bio', view).value,
-          isPublic: U.$('#pub-open', view).checked
-        })
+        profile = await api.cloud.updateMyProfile({ displayName, handle, bio, isPublic })
+        if (displayName) {
+          await api.profile.save({ nickname: displayName, tagline: bio.slice(0, 120) })
+          window.K.app.profile = await api.profile.get()
+        }
         U.toast('Профиль сохранён', 'good')
-        renderSignedIn(view, status)
+        renderSignedIn(view, status, rootView)
       } catch (err) {
         U.toast(err.message || 'Не удалось сохранить профиль', 'bad')
         button.disabled = false
@@ -920,22 +951,26 @@ window.K = window.K || {};
       '</div></article>'
   }
 
+  const CHEVRON_PREV_SVG = '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M12.2 4.5 6.8 10l5.4 5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  const CHEVRON_NEXT_SVG = '<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M7.8 4.5 13.2 10l-5.4 5.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
   function openScreenshotLightbox(shots, startIndex, gameTitle) {
     if (!Array.isArray(shots) || !shots.length) return
     let idx = Math.max(0, Math.min(shots.length - 1, Number(startIndex) || 0))
     const body =
       '<div class="shot-lightbox">' +
         '<div class="shot-lightbox-stage">' +
-          '<img id="lb-img" src="' + U.attr(shots[idx].full || shots[idx].thumb) + '" alt="">' +
-          '<button type="button" class="shot-nav prev" id="lb-prev" title="Предыдущий скриншот (←)" aria-label="Предыдущий">‹</button>' +
-          '<button type="button" class="shot-nav next" id="lb-next" title="Следующий скриншот (→)" aria-label="Следующий">›</button>' +
-          '<button type="button" class="shot-close" data-close title="Закрыть (Esc)" aria-label="Закрыть">✕</button>' +
+          '<img id="lb-img" src="' + U.attr(shots[idx].full || shots[idx].thumb) + '" alt="" decoding="async">' +
+          (shots.length > 1
+            ? '<button type="button" class="shot-nav prev" id="lb-prev" title="Предыдущий скриншот (←)" aria-label="Предыдущий">' + CHEVRON_PREV_SVG + '</button>' +
+              '<button type="button" class="shot-nav next" id="lb-next" title="Следующий скриншот (→)" aria-label="Следующий">' + CHEVRON_NEXT_SVG + '</button>'
+            : '') +
           '<div class="shot-counter" id="lb-counter">' + (idx + 1) + ' / ' + shots.length + '</div>' +
         '</div>' +
         (shots.length > 1 ? '<div class="shot-lightbox-thumbs" id="lb-thumbs">' +
           shots.map((s, i) =>
             '<button type="button" class="steam-shot-thumb' + (i === idx ? ' active' : '') + '" data-lb-idx="' + i + '">' +
-            '<img src="' + U.attr(s.thumb || s.full) + '" alt=""></button>'
+            '<img src="' + U.attr(s.thumb || s.full) + '" alt="" decoding="async"></button>'
           ).join('') + '</div>' : '') +
       '</div>'
 
@@ -1093,8 +1128,8 @@ window.K = window.K || {};
           '<div class="steam-gallery-main">' +
             '<img id="steam-main-shot" src="' + U.attr(shots[0].full) + '" alt="" data-idx="0" data-full="' + U.attr(shots[0].full) + '">' +
             (shots.length > 1
-              ? '<button type="button" class="shot-nav prev" id="steam-shot-prev" title="Предыдущий скриншот (←)" aria-label="Предыдущий">‹</button>' +
-                '<button type="button" class="shot-nav next" id="steam-shot-next" title="Следующий скриншот (→)" aria-label="Следующий">›</button>' +
+              ? '<button type="button" class="shot-nav prev" id="steam-shot-prev" title="Предыдущий скриншот (←)" aria-label="Предыдущий">' + CHEVRON_PREV_SVG + '</button>' +
+                '<button type="button" class="shot-nav next" id="steam-shot-next" title="Следующий скриншот (→)" aria-label="Следующий">' + CHEVRON_NEXT_SVG + '</button>' +
                 '<div class="shot-counter" id="steam-shot-counter">1 / ' + shots.length + '</div>'
               : '') +
           '</div>' +
@@ -1220,7 +1255,7 @@ window.K = window.K || {};
           '<div class="row wrap" style="gap:8px"><b>' + U.esc(profile.display_name || profile.handle || 'Участник') + '</b>' + badgePillsHtml(profile, false) + '</div>' +
           '<div class="tiny dim" style="margin-top:3px">Жанр: ' + U.esc(genreLabel) + ' · Заполнено: ' + Math.round((Number(review.coverage ?? computed.coverage) || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</div>' +
         '</div>' +
-        '<div>' + C.ring(total, { size: 96, stroke: 8, color: U.scoreColor(total), sublabel: grade ? grade.letter + ' · ' + grade.label : '' }) + '</div>' +
+        '<div>' + C.ring(total, { size: 96, stroke: 8, color: U.scoreColor(total), sublabel: grade ? grade.label : '' }) + '</div>' +
       '</div>' +
       (review.verdict ? '<div class="divider"></div><div style="font-size:13px;line-height:1.6">' + U.esc(review.verdict) + '</div>' : '') +
       '</div>'

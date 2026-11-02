@@ -535,8 +535,8 @@ window.K = window.K || {};
     const coverage = Math.round(score.coverage * 100)
 
     card.innerHTML =
-      C.ring(total, { size: 148, stroke: 10, color: U.scoreColor(total), sublabel: grade ? grade.letter + ' · ' + grade.label : 'нет оценок' }) +
-      '<div class="grade-name" style="margin-top:2px">' + (grade ? '<span class="grade-letter" style="color:' + grade.color + '">' + grade.letter + '</span> · ' + U.esc(grade.label) : 'Начните оценивать') + '</div>' +
+      C.ring(total, { size: 148, stroke: 10, color: U.scoreColor(total), sublabel: grade ? grade.label : 'нет оценок' }) +
+      '<div class="grade-name" style="margin-top:2px">' + (grade ? '<span class="grade-letter" style="color:' + grade.color + '">' + U.esc(grade.label) + '</span> <span class="tiny dim">(' + U.esc(grade.letter) + ')</span>' : 'Начните оценивать') + '</div>' +
       '<div class="tier-lines">' + score.tiers.map((t) => {
         const pct = t.points ? (t.earned / t.points) * 100 : 0
         return '<div class="tier-line"><div class="tier-line-top"><span>' + U.esc(t.name) + '</span><span><b>' + U.formatNumber(t.earned) + '</b> / ' + t.points + '</span></div>' +

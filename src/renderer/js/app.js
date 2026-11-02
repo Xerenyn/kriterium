@@ -122,13 +122,12 @@ window.K = window.K || {};
       else if (route.name === 'steam') window.K.Social.renderSteamGame(view, route.id)
       else if (route.name === 'community') window.K.Social.renderCommunity(view)
       else if (route.name === 'person') window.K.Social.renderPerson(view, route.id)
-      else if (route.name === 'account') window.K.Social.renderAccount(view)
+      else if (route.name === 'account' || route.name === 'profile') window.K.Pages.renderProfile(view)
       else if (route.name === 'library') renderLibrary(view)
       else if (route.name === 'game') renderDetail(view, route.id)
       else if (route.name === 'new') window.K.Editor.render(view, null)
       else if (route.name === 'review') window.K.Editor.render(view, null, route.id)
       else if (route.name === 'edit') window.K.Editor.render(view, route.id)
-      else if (route.name === 'profile') window.K.Pages.renderProfile(view)
       else if (route.name === 'patches') window.K.Pages.renderPatches(view)
       else if (route.name === 'settings') window.K.Pages.renderSettings(view)
       else renderOverview(view)
@@ -152,7 +151,7 @@ window.K = window.K || {};
   }
 
   function setActiveNav(route) {
-    const map = { overview: '#/overview', new: '#/new', review: '#/catalog', edit: '#/library', library: '#/library', game: '#/library', catalog: '#/catalog', steam: '#/catalog', community: '#/community', person: '#/community', account: '#/account', profile: '#/profile', patches: '#/patches', settings: '#/settings' }
+    const map = { overview: '#/overview', new: '#/new', review: '#/catalog', edit: '#/library', library: '#/library', game: '#/library', catalog: '#/catalog', steam: '#/catalog', community: '#/community', person: '#/community', account: '#/profile', profile: '#/profile', patches: '#/patches', settings: '#/settings' }
     U.$$('#nav .nav-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.route === map[route.name])
     })
@@ -622,7 +621,7 @@ window.K = window.K || {};
     const lines = []
     lines.push('# ' + game.title + (game.year ? ' (' + game.year + ')' : ''))
     lines.push('')
-    lines.push('**Оценка: ' + total + ' / 100** · ' + (score.grade ? score.grade.letter + ' — ' + score.grade.label : 'нет оценки'))
+    lines.push('**Оценка: ' + total + ' / 100** · ' + (score.grade ? score.grade.label : 'нет оценки'))
     lines.push('')
     lines.push('Жанр: ' + (catalog.genres.find((g) => g.id === game.genre) || { name: game.genre }).name + ' · Статус: ' + app.statusName(game.status) + (game.hours ? ' · ' + game.hours + ' ч' : ''))
     lines.push('Покрытие критериев: ' + Math.round(score.coverage * 100) + '% (' + score.rated + '/' + score.applicable + ')')
