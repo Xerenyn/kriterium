@@ -601,8 +601,87 @@ window.K = window.K || {};
     'наврятли': 'навряд ли'
   }
 
-  const PROFANITY_RE = /(?:^|[^а-яa-zё])(ху[йеяиюл]|пизд|еба[тлн]|ебл[аоу]|бля[дт]|сук[аи]|муда[кч]|гандон|пидор|уеб|залуп|fuck|shit|bitch)(?:[^а-яa-zё]|$)/i
   const SMASH_RE = /(?:фыв|йцу|ячс|asd|qwe|zxc){2,}|(.)\1{4,}/i
+
+  /*
+   * Корни нецензурной лексики. Ищутся как подстрока в слове, чтобы ловить любые
+   * формы: «охуенный», «заебись», «хуила», «пиздец», «бля», «мудачьё» и т.д.
+   * Храним уже нормализованными (ё→е).
+   */
+  const PROFANITY_ROOTS_CYR = [
+    'хуй', 'хуе', 'хуя', 'хую', 'хуи', 'хуу',
+    'пизд', 'пзд',
+    'бля',
+    'еба', 'ебу', 'ебат', 'ебан', 'ебуч', 'ебл', 'ебис', 'ебош',
+    'сучк', 'суча', 'сучар', 'сука', 'суки',
+    'мудак', 'мудач', 'мудил', 'мудое',
+    'гандон', 'гондон', 'пидор', 'пидар', 'пидр',
+    'уеб', 'залуп', 'долбо',
+    'хер', 'говно', 'говн', 'гавно', 'чмо', 'чмош', 'мраз'
+  ]
+  const PROFANITY_ROOTS_LAT = [
+    'fuck', 'fck', 'shit', 'bitch', 'whore', 'cunt', 'asshole', 'wanker',
+    'dickhead', 'motherf',
+    'huy', 'xyu', 'pizd', 'ebat', 'eban', 'ebuch', 'blyad', 'blya',
+    'mudak', 'pidor', 'suka', 'nahuy', 'nhuy'
+  ]
+  const PROFANITY_ROOTS = PROFANITY_ROOTS_CYR.concat(PROFANITY_ROOTS_LAT)
+
+  // Подмены символов: «@», «0», «3», «6» вместо букв.
+  const PROFANITY_LEET = { '@': 'а', '0': 'о', '3': 'е', '6': 'б', '*': 'а' }
+  // Латинские буквы-двойники кириллицы (второй проход нормализации).
+  const HOMOGLYPHS = { a: 'а', c: 'с', e: 'е', o: 'о', p: 'р', x: 'х', y: 'у', i: 'и', k: 'к', m: 'м', t: 'т' }
+  const LATIN_TO_CYR = /[aceopyxikmt]/g
+
+  function profanityVariants(rawText) {
+    const collapseRe = /(.)\1{2,}/g
+    const low = String(rawText || '')
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .replace(collapseRe, '$1') // «хуууй» → «хуй»
+    const leetLetters = low.replace(/[@036*]/g, (ch) => PROFANITY_LEET[ch] || '')
+    const leetMasked = low.replace(/[@036*]/g, '')
+    return [
+      leetLetters,
+      leetMasked,
+      leetMasked.replace(LATIN_TO_CYR, (ch) => HOMOGLYPHS[ch] || ch).replace(collapseRe, '$1')
+    ]
+  }
+
+  function scanProfanity(rawText) {
+    const samples = new Set()
+    let masked = false
+    for (const variant of profanityVariants(rawText)) {
+      for (const word of variant.match(/[a-zа-я]+/g) || []) {
+        const root = PROFANITY_ROOTS.find((r) => word.includes(r))
+        if (root) samples.add(word)
+      }
+      // Маскировка разделителями: «х у й», «бл-я», «е,б,а,т».
+      let compact = ''
+      const hadSepBefore = []
+      for (let i = 0; i < variant.length; i++) {
+        if (/[a-zа-я]/.test(variant[i])) {
+          compact += variant[i]
+          hadSepBefore.push(i > 0 && /[^a-zа-я]/.test(variant[i - 1]))
+        }
+      }
+      for (const root of PROFANITY_ROOTS) {
+        let at = compact.indexOf(root)
+        while (at !== -1) {
+          // Корень «склеился» из букв, между которыми в тексте стояли разделители.
+          if (hadSepBefore.slice(at + 1, at + root.length).some(Boolean)) {
+            masked = true
+            break
+          }
+          at = compact.indexOf(root, at + 1)
+        }
+        if (masked) break
+      }
+      if (masked) break
+    }
+    return { samples: Array.from(samples), masked }
+  }
+
 
   function analyzeReviewQuality(game, ratings, calculated) {
     const fields = [
@@ -613,12 +692,17 @@ window.K = window.K || {};
     ]
     const typos = []
     const suspicionReasons = []
-    let hasProfanity = false
+    const profanitySamples = []
+    let maskedProfanity = false
     let hasSmash = false
 
     for (const [fieldKey, fieldLabel, text] of fields) {
       if (!text.trim()) continue
-      if (PROFANITY_RE.test(text)) hasProfanity = true
+      const profanity = scanProfanity(text)
+      for (const sample of profanity.samples) {
+        if (!profanitySamples.includes(sample)) profanitySamples.push(sample)
+      }
+      if (profanity.masked) maskedProfanity = true
       if (SMASH_RE.test(text)) hasSmash = true
       const trimmed = text.trim()
       if (trimmed.length > 0 && trimmed.length <= 2 && /^[а-яa-z0-9]$/i.test(trimmed)) {
@@ -645,8 +729,12 @@ window.K = window.K || {};
       }
     }
 
-    if (hasProfanity) {
-      suspicionReasons.push('Нецензурная лексика или оскорбления в тексте рецензии')
+    if (profanitySamples.length) {
+      const shown = profanitySamples.slice(0, 4).map((w) => '«' + w + '»').join(', ')
+      suspicionReasons.push('Нецензурная лексика в тексте рецензии (' + profanitySamples.length + '): ' + shown)
+    }
+    if (maskedProfanity) {
+      suspicionReasons.push('Похоже на замаскированную нецензурную лексику (буквы разделены пробелами/знаками или заменены)')
     }
     if (hasSmash) {
       suspicionReasons.push('Подозрение на спам / бессвязный набор символов в тексте')
@@ -1025,5 +1113,5 @@ window.K = window.K || {};
     }
   }
 
-  window.K.Editor = { render, analyzeReviewQuality }
+  window.K.Editor = { render, analyzeReviewQuality, scanProfanity }
 })()
