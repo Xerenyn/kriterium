@@ -827,7 +827,12 @@ window.K = window.K || {};
           if (!target.isConnected || location.hash !== '#/catalog' || catalogRegion !== requestRegion || token !== catalogToken) return
           const cardEl = U.$('[data-steam-card="' + game.steamAppId + '"]', target)
           if (!cardEl) continue
-          const merged = Object.assign({}, game, details, { community: game.community })
+          const keepHiResCover = /_2x\.jpg/i.test(game.headerImage || '') ? game.headerImage : (details.headerImage || game.headerImage)
+          const merged = Object.assign({}, game, details, {
+            headerImage: keepHiResCover,
+            image: keepHiResCover,
+            community: game.community
+          })
           const holder = document.createElement('div')
           holder.innerHTML = steamResultCard(merged)
           const fresh = holder.firstElementChild

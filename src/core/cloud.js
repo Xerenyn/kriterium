@@ -407,6 +407,7 @@ function createCloud(configPath, safeStorage, options = {}) {
 
       const data = await fetchJson('https://store.steampowered.com/search/results/?' + params.toString())
       const items = parseSteamSearchRows(data.results_html || '', cc)
+      await hydrateSteamBrowseItems(items).catch(() => {})
       const total = Math.max(0, Number(data.total_count) || 0)
       return {
         items,
@@ -849,7 +850,10 @@ function parseSteamSearchRows(html, cc) {
     const title = cleanSteamHtmlToText((chunk.match(/<span class="title">([\s\S]*?)<\/span>/) || [])[1] || '')
     if (!title) continue
 
-    const image = (chunk.match(/<img src="([^"]+)"/) || [])[1] || ''
+    const rawImage = (chunk.match(/<img src="([^"]+)"/) || [])[1] || ''
+    const image = /\/steam\/apps\/\d+\/capsule_231x87\.jpg/i.test(rawImage)
+      ? rawImage.replace(/\/capsule_231x87\.jpg/i, '/header.jpg')
+      : rawImage.replace(/\/(capsule_231x87[^/.]*)\.jpg/i, '/$1_2x.jpg')
     const priceRaw = (chunk.match(/data-price-final="(\d+)"/) || [])[1]
     const price = priceRaw != null ? Number(priceRaw) / 100 : null
     const discountPercent = Number((chunk.match(/data-discount="(\d+)"/) || [])[1]) || 0
@@ -888,6 +892,66 @@ function parseSteamSearchRows(html, cc) {
       metacritic: null,
       storeUrl: 'https://store.steampowered.com/app/' + appId + '/'
     })
+  }
+  return items
+}
+
+async function hydrateSteamBrowseItems(items) {
+  if (!Array.isArray(items) || !items.length) return items
+  const payload = {
+    ids: items.map((item) => ({ appid: Number(item.steamAppId) })),
+    context: { language: 'russian', country_code: 'KZ' },
+    data_request: {
+      include_assets: true,
+      include_basic_info: true,
+      include_screenshots: true,
+      include_reviews: true
+    }
+  }
+  const url = 'https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json=' + encodeURIComponent(JSON.stringify(payload))
+  const res = await fetchJson(url)
+  const storeItems = Array.isArray(res?.response?.store_items) ? res.response.store_items : []
+  const byId = new Map(storeItems.map((entry) => [Number(entry.appid), entry]))
+  const cdnBase = 'https://shared.akamai.steamstatic.com/store_item_assets/'
+
+  for (const item of items) {
+    const entry = byId.get(Number(item.steamAppId))
+    if (!entry) continue
+    const assets = entry.assets || {}
+    const fmt = String(assets.asset_url_format || '')
+    const bestFile = assets.header_2x || assets.header || assets.main_capsule_2x || assets.main_capsule || assets.small_capsule_2x || ''
+    if (fmt && bestFile) {
+      const hiRes = cdnBase + fmt.replace('${FILENAME}', bestFile)
+      item.headerImage = hiRes
+      item.image = hiRes
+    }
+    const basic = entry.basic_info || {}
+    if (basic.short_description && !item.description) {
+      item.description = cleanSteamHtmlToText(basic.short_description).slice(0, 320)
+    }
+    if (Array.isArray(basic.developers) && basic.developers.length && !item.developers.length) {
+      item.developers = basic.developers.map((d) => String(d?.name || '').trim()).filter(Boolean)
+    }
+    if (Array.isArray(basic.publishers) && basic.publishers.length && !item.publishers.length) {
+      item.publishers = basic.publishers.map((p) => String(p?.name || '').trim()).filter(Boolean)
+    }
+    const revCount = Number(entry.reviews?.summary_filtered?.review_count) || 0
+    if (revCount > 0 && !item.steamRecommendationCount) {
+      item.steamRecommendationCount = revCount
+    }
+    if (!item.screenshots.length && entry.screenshots) {
+      const rawShots = (Array.isArray(entry.screenshots.all_ages_screenshots) ? entry.screenshots.all_ages_screenshots : [])
+        .concat(Array.isArray(entry.screenshots.mature_content_screenshots) ? entry.screenshots.mature_content_screenshots : [])
+        .slice(0, 6)
+      item.screenshots = rawShots
+        .map((s, idx) => {
+          const fn = String(s?.filename || '').trim()
+          if (!fn) return null
+          const full = /^https?:\/\//i.test(fn) ? fn : cdnBase + fn
+          return { id: idx, thumb: full, full }
+        })
+        .filter(Boolean)
+    }
   }
   return items
 }
