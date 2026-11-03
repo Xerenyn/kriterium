@@ -665,7 +665,11 @@ window.K = window.K || {};
       renderProfileMini()
       renderNavCount()
       const version = U.$('#side-version')
-      if (version) version.textContent = 'Критериум ' + info.version + ' · ' + (info.backend === 'sqlite' ? 'SQLite' : info.backend)
+      if (version) {
+        version.innerHTML = 'Критериум ' + info.version + ' · ' + (info.backend === 'sqlite' ? 'SQLite' : info.backend) +
+          ' · <span class="tg-link" title="Телеграм-канал «Критериум»">t.me/Kriteriumapp</span>'
+        U.$('.tg-link', version)?.addEventListener('click', () => api.openExternal('https://t.me/Kriteriumapp'))
+      }
 
       if (location.hash) app.render()
       else location.hash = '#/overview'

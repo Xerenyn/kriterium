@@ -719,7 +719,7 @@ window.K = window.K || {};
       '<select id="st-step" style="width:110px"><option value="0.5"' + (settings.step === 0.5 ? ' selected' : '') + '>0,5</option><option value="1"' + (settings.step === 1 ? ' selected' : '') + '>1</option></select></div>' +
       '</div>'
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">База данных</div><div class="card-sub">Всё хранится на этом компьютере</div></div>' +
+    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Локальная база данных</div><div class="card-sub">Личное хранилище оценок и резервные копии на этом компьютере</div></div>' +
       '<span class="chip good">' + U.esc(info.backend === 'sqlite' ? 'SQLite' : info.backend) + '</span></div>' +
       '<div class="tiny dim" style="line-height:1.7;word-break:break-all"><b style="color:var(--muted)">Файл:</b> ' + U.esc(info.dbPath) + '</div>' +
       '<div class="row wrap" style="gap:8px;margin-top:12px">' +
@@ -747,11 +747,17 @@ window.K = window.K || {};
       '<div class="row" style="padding:6px 0"><span class="small muted">Node</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.node) + '</span></div>' +
       '<div class="row" style="padding:6px 0"><span class="small muted">Chromium</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.chrome) + '</span></div>' +
       '<div class="divider"></div>' +
-      '<div class="tiny dim" style="line-height:1.65">Локальный профиль. Никаких сетевых запросов: все данные лежат в SQLite-файле и доступны через экспорт.</div>' +
+      '<div class="row wrap" style="gap:8px;align-items:center">' +
+      '<span class="tiny dim">Телеграм-канал:</span>' +
+      '<button class="btn sm ghost" data-external="https://t.me/Kriteriumapp" title="Открыть канал в браузере">' + U.icon('telegram', 13) + ' t.me/Kriteriumapp</button>' +
+      '</div>' +
+      '<div class="tiny dim" style="line-height:1.65;margin-top:10px">Личные оценки и черновики хранятся локально в SQLite (доступен полный экспорт), каталог игр и региональные цены загружаются из Steam, а публичный профиль, рецензии участников, награды и официальные патчи синхронизируются через общую базу сообщества.</div>' +
       '</div>'
 
     html += '</div></div>'
     view.innerHTML = shell(html)
+
+    U.$$('[data-external]', view).forEach((btn) => btn.addEventListener('click', () => api.openExternal(btn.dataset.external)))
 
     U.$$('[data-color]', view).forEach((btn) => btn.addEventListener('click', async () => {
       await api.profile.save({ accent: btn.dataset.color })
