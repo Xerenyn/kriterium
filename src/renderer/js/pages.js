@@ -735,14 +735,13 @@ window.K = window.K || {};
       '<div class="row" style="padding:7px 0"><span class="small muted">Критериев</span><span class="spacer"></span><span class="mono">' + criteriaCount + '</span></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Категорий</span><span class="spacer"></span><span class="mono">' + catalog.categories.length + '</span></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Жанров</span><span class="spacer"></span><span class="mono">' + catalog.genres.length + '</span></div>' +
-      '<div class="row" style="padding:7px 0"><span class="small muted">Патчей</span><span class="spacer"></span><span class="mono">' + app().patches.length + '</span></div>' +
       '<div class="divider"></div>' +
       '<div class="formula-strip"><span></span><span></span><span></span></div>' +
       '<div class="formula-legend" style="margin-top:8px"><span><i class="dot" style="background:var(--accent)"></i>60</span><span><i class="dot" style="background:#7c8f80"></i>25</span><span><i class="dot" style="background:#9c8e64"></i>15</span></div>' +
       '</div>'
 
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Обновления</div><div class="card-sub">Проверка новых версий и установка в один клик</div></div></div>' +
-      '<div class="row" style="padding:6px 0"><span class="small muted">Ваша версия</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.version) + '</span></div>' +
+      '<div class="row" style="padding:6px 0"><span class="small muted">Ваша версия</span><span class="spacer"></span><span class="mono">' + U.esc(info.version) + '</span></div>' +
       '<div id="upd-state" style="min-height:26px"><div class="tiny dim">Нажмите «Проверить», чтобы сравнить с GitHub.</div></div>' +
       '<div class="row wrap" style="gap:8px;margin-top:12px">' +
       '<button class="btn" data-upd="check">' + U.icon('search', 14) + ' Проверить обновления</button>' +

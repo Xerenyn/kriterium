@@ -56,6 +56,56 @@ window.K = window.K || {};
     return Object.values(ratings || {}).filter((c) => c && (c.na || (c.v != null && Number.isFinite(Number(c.v))))).length
   }
 
+  /* Сопоставление жанров Steam с жанрами каталога. Специфичные новости — раньше общих. */
+  const STEAM_GENRE_ALIASES = [
+    ['fps', ['шутер от первого лица', 'first-person shooter', 'first person shooter']],
+    ['tps', ['от третьего лица', 'third-person shooter', 'third person shooter']],
+    ['jrpg', ['jrpg', 'японские ролевые']],
+    ['rts', ['стратегия в реальном времени', 'real-time strategy', 'real time strategy']],
+    ['tbs', ['пошаговая стратегия', 'turn-based strategy', 'turn based strategy']],
+    ['battle_royale', ['королевская битва', 'battle royale']],
+    ['deckbuilder', ['колод', 'deckbuild', 'deck-builder']],
+    ['immersive_sim', ['иммерсив', 'immersive']],
+    ['metroidvania', ['метроидвания', 'metroidvania']],
+    ['walking_sim', ['симулятор прогулки', 'walking sim', 'симулятор ходьбы']],
+    ['visual_novel', ['визуальная новелла', 'visual novel']],
+    ['fighting', ['файтинг', 'fighting']],
+    ['horror', ['хоррор', 'horror', 'ужасы']],
+    ['stealth', ['стелс', 'stealth']],
+    ['platformer', ['платформер', 'platformer']],
+    ['sim_racing', ['автосим', 'симулятор гонок', 'симуляция гонок', 'racing sim']],
+    ['racing', ['гонки', 'racing']],
+    ['sports', ['спорт', 'sports']],
+    ['moba', ['moba']],
+    ['mmo', ['mmo']],
+    ['survival', ['выживание', 'survival']],
+    ['puzzle', ['головоломка', 'puzzle']],
+    ['citybuilder', ['градостроитель', 'city builder', 'строительство городов']],
+    ['management', ['менеджмент', 'management', 'управлен']],
+    ['sandbox', ['песочница', 'sandbox']],
+    ['rhythm', ['ритм', 'rhythm']],
+    ['rpg', ['rpg', 'ролевые']],
+    ['adventure', ['приключ', 'adventure']],
+    ['action', ['экшен', 'action', 'шутер', 'shooter']]
+  ]
+
+  function normGenreText(text) {
+    return String(text || '').toLowerCase().replace(/ё/g, 'е')
+  }
+
+  /* Подбирает жанр каталога по описанию жанров Steam; null, если ничего не подошло. */
+  function guessGenreFromSteam(steamGenres) {
+    for (const desc of Array.isArray(steamGenres) ? steamGenres : []) {
+      const text = normGenreText(desc)
+      if (!text) continue
+      for (const [genreId, aliases] of STEAM_GENRE_ALIASES) {
+        if (aliases.some((alias) => text.indexOf(alias) !== -1)) return genreId
+      }
+    }
+    return null
+  }
+
+
   function draftKeyFor(id) {
     return 'kriterium.draft.' + (id || 'new')
   }
@@ -147,6 +197,10 @@ window.K = window.K || {};
       const year = String(steamDetails.releaseDate || '').match(/\b(19|20)\d{2}\b/)
       baseGame.year = year ? Number(year[0]) : baseGame.year
       baseGame.platforms = steamDetails.platforms || baseGame.platforms
+      // Жанр подтягивается из данных Steam: жанр считается свойством игры,
+      // а не черновика. Если Steam не распознан — остаётся прежний жанр.
+      const steamGenreId = guessGenreFromSteam(steamDetails.genres)
+      if (steamGenreId) baseGame.genre = steamGenreId
       baseGame.custom = Object.assign({}, baseGame.custom || {}, {
         _communityGameId: communityGame.gameId,
         _steamAppId: communityGame.steamAppId
@@ -156,7 +210,7 @@ window.K = window.K || {};
         if (!baseGame.verdict && rev.verdict) baseGame.verdict = rev.verdict
         if (!baseGame.pros && rev.pros) baseGame.pros = rev.pros
         if (!baseGame.cons && rev.cons) baseGame.cons = rev.cons
-        if (rev.genre_id && !sourceGame) baseGame.genre = rev.genre_id
+        if (rev.genre_id && !sourceGame && !steamGenreId) baseGame.genre = rev.genre_id
         if (!countRated(baseRatings) && rev.criterion_ratings && typeof rev.criterion_ratings === 'object') {
           baseRatings = JSON.parse(JSON.stringify(rev.criterion_ratings))
         }
@@ -181,6 +235,7 @@ window.K = window.K || {};
         const mergedCustom = Object.assign({}, baseGame.custom || {}, draft.game.custom || {})
         state.game = Object.assign(blankGame(), baseGame, draft.game, {
           title: communityGame ? steamDetails.title : (draft.game.title || baseGame.title),
+          genre: communityGame ? baseGame.genre : (draft.game.genre || baseGame.genre),
           custom: mergedCustom
         })
         if (draftCount >= baseCount) state.ratings = draft.ratings || {}
