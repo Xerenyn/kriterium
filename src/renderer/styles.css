@@ -923,15 +923,25 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
 .field label { display: block; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin-bottom: 5px; }
 .field .hint { margin-top: 4px; font-size: 10.5px; color: var(--dim); }
 
-.tier-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tier-rail { padding: 12px; display: flex; flex-direction: column; gap: 9px; }
+.tier-rail-title { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+.tier-tabs { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
 .tier-tab {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 12px; border: 1px solid var(--line); border-radius: 9px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+  width: 100%; padding: 9px 11px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 9px;
   background: transparent; color: var(--muted); font-size: 12px;
+  transition: border-color .15s, background .15s;
 }
+.tier-tab-top { display: flex; align-items: center; gap: 7px; width: 100%; }
+.tier-tab .tier-tab-name { font-size: 12px; }
+.tier-tab .spacer { flex: 1; min-width: 0; }
 .tier-tab b { font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
 .tier-tab .pts { font-size: 10.5px; color: var(--dim); }
 .tier-tab.active { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); color: var(--text); }
+.tier-tab-bar { display: block; height: 4px; border-radius: 4px; background: rgba(255,255,255,.07); overflow: hidden; }
+.tier-tab-bar i { display: block; height: 100%; border-radius: 4px; transition: width .2s; }
+.tier-hint { display: block; font-size: 10.5px; line-height: 1.5; }
 
 .cat-jump { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 2px; }
 .cat-jump button {

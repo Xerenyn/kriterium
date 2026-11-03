@@ -248,8 +248,6 @@ window.K = window.K || {};
       '<span class="spacer"></span><span class="tiny dim" id="genre-note">' + U.esc((catalog.genre && catalog.genre.note) || '') + '</span></div>' +
       '</div>'
 
-    /* вкладки уровней */
-    html += '<div class="tier-tabs" id="tier-tabs">' + tierTabsHtml() + '</div>'
     html += '<div id="criteria-area"></div>'
 
     /* итоговый текст */
@@ -268,7 +266,11 @@ window.K = window.K || {};
     html += '</div>'
 
     /* панель балла */
-    html += '<aside class="score-panel"><div class="card score-card" id="score-card"></div>' +
+    html += '<aside class="score-panel">' +
+      '<div class="card tier-rail"><div class="tier-rail-title">Критерии оценивания</div>' +
+      '<div class="tier-tabs rail" id="tier-tabs"></div>' +
+      '<span class="tiny dim tier-hint" id="tier-hint"></span></div>' +
+      '<div class="card score-card" id="score-card"></div>' +
       '<div class="card score-actions" style="padding:12px;gap:8px">' +
       '<button class="btn primary" data-editor-save>' + U.icon('save', 15) + (state.communityGame ? ' Сохранить и опубликовать' : ' Сохранить оценку') + '</button>' +
       '<button class="btn ghost" data-action="cancel">Отмена</button>' +
@@ -279,10 +281,18 @@ window.K = window.K || {};
     html += '</div>'
     view.innerHTML = html
 
+    renderTierTabs()
     renderCriteria()
     renderScore()
     bindMeta(view)
     bindActions(view)
+  }
+
+  function renderTierTabs() {
+    const tabs = U.$('#tier-tabs')
+    if (!tabs) return
+    tabs.innerHTML = tierTabsHtml()
+    bindTierTabs()
   }
 
   function field(label, control, span) {
@@ -309,10 +319,13 @@ window.K = window.K || {};
       const tierScore = score.tiers.find((x) => x.id === t.id)
       const pct = t.points ? Math.round((tierScore.earned / t.points) * 100) : 0
       return '<button class="tier-tab' + (state.activeTier === t.id ? ' active' : '') + '" data-tier="' + U.attr(t.id) + '">' +
-        '<span>' + U.esc(t.name) + '</span>' +
+        '<span class="tier-tab-top"><span class="tier-tab-name">' + U.esc(t.name) + '</span>' +
+        '<span class="spacer"></span>' +
         '<b style="color:' + U.scoreColor(pct) + '">' + U.formatNumber(tierScore.earned) + '</b>' +
-        '<span class="pts">/ ' + t.points + '</span></button>'
-    }).join('') + '<span class="spacer"></span><span class="tiny dim" id="tier-hint"></span>'
+        '<span class="pts">/ ' + t.points + '</span></span>' +
+        '<span class="tier-tab-bar"><i style="width:' + pct + '%;background:' + U.scoreColor(pct) + '"></i></span>' +
+        '</button>'
+    }).join('')
   }
 
   function currentTier() {
@@ -375,9 +388,10 @@ window.K = window.K || {};
     U.$$('[data-tier]', U.$('#tier-tabs')).forEach((btn) => {
       btn.addEventListener('click', () => {
         state.activeTier = btn.dataset.tier
-        U.$('#tier-tabs').innerHTML = tierTabsHtml()
-        bindTierTabs()
+        renderTierTabs()
         renderCriteria()
+        const area = U.$('#criteria-area')
+        if (area) area.scrollIntoView({ behavior: 'smooth', block: 'start' })
       })
     })
   }
