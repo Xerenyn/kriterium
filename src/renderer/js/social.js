@@ -1097,7 +1097,9 @@ window.K = window.K || {};
     const otherRatings = (shared?.externalRatings || []).filter((x) => !['steam', 'metacritic'].includes(x.source))
     const internalRows = Array.isArray(shared?.community) ? shared.community : []
     const internal = internalRows[0] || null
-    const heroImage = safeSteamImage(steam.headerImage)
+    // Баннер: сначала библиотечный hero в высоком разрешении, при отсутствии — обычная обложка.
+    const heroImage = safeSteamImage(steam.heroImage || steam.headerImage)
+    const heroFallback = steam.heroImage && steam.headerImage ? safeSteamImage(steam.headerImage) : ''
     const tags = Array.isArray(steam.tags) ? steam.tags : []
     const shots = (Array.isArray(steam.screenshots) ? steam.screenshots : [])
       .map((s) => ({ thumb: safeSteamImage(s.thumb), full: safeSteamImage(s.full || s.thumb) }))
@@ -1110,7 +1112,7 @@ window.K = window.K || {};
         : '<button class="btn primary sm" data-route="#/account">Войдите, чтобы оставить оценку</button>') +
       '<button class="btn ghost sm" id="open-steam">Открыть в Steam</button></div>'
 
-    html += '<div class="card steam-hero">' + (heroImage ? '<img src="' + U.attr(heroImage) + '" alt="" class="steam-hero-image">' : '') +
+    html += '<div class="card steam-hero">' + (heroImage ? '<img src="' + U.attr(heroImage) + '"' + (heroFallback ? ' data-fallback-src="' + U.attr(heroFallback) + '"' : '') + ' alt="" class="steam-hero-image">' : '') +
       '<div class="steam-hero-content"><div class="eyebrow">Steam App ID ' + steam.steamAppId + (steam.releaseDate ? ' · ' + U.esc(steam.releaseDate) : '') +
       (steam.priceText ? ' · ' + U.esc(steam.priceText) : steam.regionAvailable === false ? ' · нет в продаже в регионе ' + U.esc(String(steam.region || '').toUpperCase()) : '') + '</div>' +
       '<h1>' + U.esc(steam.title) + '</h1><p>' + U.esc(steam.description || 'Описание пока не добавлено.') + '</p>' +
@@ -1355,6 +1357,13 @@ window.K = window.K || {};
 
   function bindSteamGame(view, steam, steamReviews, status, shared) {
     U.$('#open-steam', view)?.addEventListener('click', () => api.openExternal(steam.storeUrl))
+    // Если у игры нет библиотечного баннера (404), возвращаемся к обычной обложке
+    const heroImg = U.$('.steam-hero-image', view)
+    if (heroImg && heroImg.dataset.fallbackSrc) {
+      heroImg.addEventListener('error', () => {
+        if (heroImg.src !== heroImg.dataset.fallbackSrc) heroImg.src = heroImg.dataset.fallbackSrc
+      })
+    }
     U.$$('[data-external]', view).forEach((button) => button.addEventListener('click', () => api.openExternal(button.dataset.external)))
     U.$$('[data-open-review]', view).forEach((el) => {
       el.addEventListener('click', (e) => {

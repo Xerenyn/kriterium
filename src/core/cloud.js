@@ -589,6 +589,8 @@ function createCloud(configPath, safeStorage, options = {}) {
         website: typeof game.website === 'string' ? game.website : '',
         platforms: game.platforms ? Object.entries(game.platforms).filter(([, enabled]) => enabled).map(([name]) => name) : [],
         headerImage: String(game.header_image || ''),
+        // Библиотечный баннер Steam (≈1920px шириной) — для полноширинной обложки на странице игры.
+        heroImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + id + '/library_hero.jpg',
         isFree: regionAvailable ? !!game.is_free : false,
         priceText: regionalPriceText,
         discountPercent: regionalDiscount,
