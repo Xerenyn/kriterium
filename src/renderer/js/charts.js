@@ -10,24 +10,30 @@ window.K = window.K || {};
     const opts = options || {}
     const size = opts.size || 132
     const stroke = opts.stroke || 9
+    const empty = value == null
     const color = opts.color || U.scoreColor(value)
-    const pct = value == null ? 0 : U.clamp(Number(value), 0, 100)
+    const pct = empty ? 0 : U.clamp(Number(value), 0, 100)
     const r = (size - stroke) / 2
     const c = 2 * Math.PI * r
     const dash = (c * pct) / 100
-    const valueText = value == null ? '—' : (Math.round(pct * 10) / 10).toString().replace('.', ',')
+    const valueText = empty ? '—' : (Math.round(pct * 10) / 10).toString().replace('.', ',')
     const sub = opts.sublabel == null ? 'из 100' : opts.sublabel
     const fs = Math.round(size / 4.2)
+    // Дуга рисуется по часовой от верха; при пустом значении остаётся только дорожка-фон
+    const progressCircle = empty || pct <= 0 ? '' :
+      '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + stroke + '"' +
+        ' stroke-linecap="round" stroke-dasharray="' + dash + ' ' + (c - dash) + '"' +
+        ' stroke-dashoffset="0" class="ring-progress"></circle>'
+    const totalTag = empty ? '' : (opts.hideTotal ? '<small>/10</small>' : '<small>/100</small>')
     return '' +
-      '<div class="ring" style="width:' + size + 'px;height:' + size + 'px">' +
+      '<div class="ring' + (empty ? ' is-empty' : '') + '" style="width:' + size + 'px;height:' + size + 'px">' +
         '<svg width="' + size + '" height="' + size + '">' +
           '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="rgba(255,255,255,.065)" stroke-width="' + stroke + '"/>' +
-          '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + stroke + '"' +
-            ' stroke-linecap="round" stroke-dasharray="' + dash + ' ' + (c - dash) + '"/>' +
+          progressCircle +
         '</svg>' +
         '<div class="ring-center">' +
           '<div>' +
-            '<div class="ring-value" style="font-size:' + fs + 'px">' + valueText + (opts.hideTotal ? '<small>/10</small>' : '<small>/100</small>') + '</div>' +
+            '<div class="ring-value' + (empty ? ' is-empty' : '') + '" style="font-size:' + fs + 'px">' + valueText + totalTag + '</div>' +
             (sub ? '<div class="ring-label">' + U.esc(sub) + '</div>' : '') +
           '</div>' +
         '</div>' +

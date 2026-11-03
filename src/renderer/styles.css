@@ -900,6 +900,9 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
 /* ---------- score visuals ---------- */
 .ring { position: relative; display: inline-grid; place-items: center; }
 .ring svg { transform: rotate(-90deg); }
+.ring-progress { animation: ring-draw .5s ease-out; }
+@keyframes ring-draw { from { stroke-dasharray: 0 999; } }
+.ring.is-empty .ring-value.is-empty { color: var(--dim); }
 .ring-center { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
 .ring-value { font-size: 34px; font-weight: 650; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
 .ring-value small { font-size: 13px; color: var(--dim); font-weight: 500; }

@@ -30,6 +30,9 @@ function normalizeBaseUrl(value, allowLocal) {
 
 const VALID_REGIONS = ['ru', 'kz', 'us', 'de', 'ua']
 const REGION_CURRENCY = { ru: 'RUB', kz: 'KZT', us: 'USD', de: 'EUR', ua: 'UAH' }
+// У этих игр в Steam библиотечный баннер (library_hero) — посторонняя коллаборация,
+// поэтому баннером служит официальная обложка (capsule) с логотипом игры.
+const LIBRARY_HERO_OVERRIDES = new Set([570]) // Dota 2
 const STEAM_TAG_LABELS = {
   19: 'Экшен', 21: 'Приключение', 122: 'Ролевая игра', 9: 'Стратегия',
   597: 'Казуальная', 599: 'Симулятор', 492: 'Инди', 113: 'Бесплатно',
@@ -589,8 +592,11 @@ function createCloud(configPath, safeStorage, options = {}) {
         website: typeof game.website === 'string' ? game.website : '',
         platforms: game.platforms ? Object.entries(game.platforms).filter(([, enabled]) => enabled).map(([name]) => name) : [],
         headerImage: String(game.header_image || ''),
-        // Библиотечный баннер Steam (≈1920px шириной) — для полноширинной обложки на странице игры.
-        heroImage: 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + id + '/library_hero.jpg',
+        // Библиотечный баннер Steam — wide-арт ~1920px. Для игр из LIBRARY_HERO_OVERRIDES
+        // вместо него берём официальную обложку (capsule), там library-арт чужой.
+        heroImage: LIBRARY_HERO_OVERRIDES.has(id)
+          ? 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + id + '/capsule_616x353.jpg'
+          : 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + id + '/library_hero.jpg',
         isFree: regionAvailable ? !!game.is_free : false,
         priceText: regionalPriceText,
         discountPercent: regionalDiscount,
