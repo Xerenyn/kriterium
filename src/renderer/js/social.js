@@ -84,10 +84,23 @@ window.K = window.K || {};
       '<button class="btn primary sm" data-route="#/account">Войти или создать аккаунт</button></div>'
   }
 
+  let lastRoleSignedIn = null
+
+  // После изменения статуса облака пересчитываем роль разработчика
+  // (вкладка «Патчи» показывается только ей). Обновляем только при смене
+  // входа/выхода, чтобы не гонять лишние запросы при каждом рендере.
+  function syncDeveloperRole(status) {
+    const signedIn = !!(status && status.signedIn)
+    if (signedIn === lastRoleSignedIn) return
+    lastRoleSignedIn = signedIn
+    try { window.K.app?.refreshDeveloperRole?.() } catch { /* ignore */ }
+  }
+
   async function getStatus() {
     try {
       const status = await api.cloud.status()
       window.K.app.cloudStatus = status
+      syncDeveloperRole(status)
       return status
     } catch (err) {
       return { configured: false, signedIn: false, error: err.message || String(err) }
@@ -134,6 +147,7 @@ window.K = window.K || {};
       try {
         const updated = await api.cloud.configure({ url: U.$('#cloud-url', view).value, anonKey: U.$('#cloud-key', view).value })
         window.K.app.cloudStatus = updated
+        syncDeveloperRole(updated)
         await window.K.app.reloadCloudPatches(false)
         U.toast('Общая база подключена', 'good')
         renderAccount(view, rootView)
@@ -179,6 +193,7 @@ window.K = window.K || {};
     U.$('#cloud-change-project', view).addEventListener('click', async () => {
       await api.cloud.signOut()
       window.K.app.cloudStatus = await api.cloud.status()
+      syncDeveloperRole(window.K.app.cloudStatus)
       await window.K.app.reloadCloudPatches(false)
       renderCloudSetup(view, { configured: false, url: status.url }, rootView)
     })
@@ -204,6 +219,7 @@ window.K = window.K || {};
           await api.cloud.signIn(input)
         }
         window.K.app.cloudStatus = await api.cloud.status()
+        syncDeveloperRole(window.K.app.cloudStatus)
         await window.K.app.reloadCloudPatches(false)
         U.toast(registering ? 'Аккаунт создан' : 'Вы вошли', 'good')
         if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
@@ -376,6 +392,7 @@ window.K = window.K || {};
     U.$('#cloud-signout', view).addEventListener('click', async () => {
       await api.cloud.signOut()
       window.K.app.cloudStatus = await api.cloud.status()
+      syncDeveloperRole(window.K.app.cloudStatus)
       await window.K.app.reloadCloudPatches(false)
       if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
       else renderAccount(view, rootView)

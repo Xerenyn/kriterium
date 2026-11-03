@@ -26,6 +26,7 @@ window.K = window.K || {};
     ratings: {},
     settings: { showHints: true, step: 0.5 },
     cloudStatus: { configured: false, signedIn: false },
+    isDeveloper: false,
     cache: new Map(),
     booted: false,
 
@@ -108,6 +109,7 @@ window.K = window.K || {};
       applyAccent(profile.accent)
       renderProfileMini()
       renderNavCount()
+      applyNavRole()
       this.render()
     },
 
@@ -116,6 +118,12 @@ window.K = window.K || {};
       setActiveNav(route)
       const view = U.$('#view')
       if (!view) return
+      if (route.name === 'patches' && !app.isDeveloper) {
+        U.toast('Раздел «Патчи» доступен только разработчику', 'bad')
+        if (location.hash !== '#/overview') location.hash = '#/overview'
+        else app.render()
+        return
+      }
       view.scrollTop = 0
       if (route.name === 'overview' || route.name === 'library') renderOverview(view)
       else if (route.name === 'catalog') window.K.Social.renderCatalog(view)
@@ -130,12 +138,28 @@ window.K = window.K || {};
       else if (route.name === 'patches') window.K.Pages.renderPatches(view)
       else if (route.name === 'settings') window.K.Pages.renderSettings(view)
       else renderOverview(view)
-    }
+    },
+    refreshDeveloperRole
   }
 
   window.K.app = app
 
   /* ---------- служебное ---------- */
+
+  async function refreshDeveloperRole() {
+    try {
+      const status = app.cloudStatus || {}
+      app.isDeveloper = !!status.signedIn && !!(await api.cloud.isDeveloper().catch(() => false))
+    } catch { app.isDeveloper = false }
+    applyNavRole()
+    return app.isDeveloper
+  }
+
+  function applyNavRole() {
+    U.$$('#nav .nav-item').forEach((item) => {
+      if (item.dataset.route === '#/patches') item.style.display = app.isDeveloper ? '' : 'none'
+    })
+  }
 
   function parseRoute() {
     const raw = (location.hash || '#/overview').replace(/^#\/?/, '')
@@ -659,6 +683,10 @@ window.K = window.K || {};
       app.settings.showHints = showHints !== false
       app.settings.step = [0.5, 1].includes(Number(step)) ? Number(step) : 0.5
       app.cloudStatus = cloudStatus
+      try {
+        app.isDeveloper = !!cloudStatus?.signedIn && !!(await api.cloud.isDeveloper().catch(() => false))
+      } catch { app.isDeveloper = false }
+      applyNavRole()
       app.booted = true
 
       applyAccent(profile.accent)
