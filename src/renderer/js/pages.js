@@ -741,6 +741,14 @@ window.K = window.K || {};
       '<div class="formula-legend" style="margin-top:8px"><span><i class="dot" style="background:var(--accent)"></i>60</span><span><i class="dot" style="background:#7c8f80"></i>25</span><span><i class="dot" style="background:#9c8e64"></i>15</span></div>' +
       '</div>'
 
+    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Обновления</div><div class="card-sub">Проверка новых версий и установка в один клик</div></div></div>' +
+      '<div class="row" style="padding:6px 0"><span class="small muted">Ваша версия</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.version) + '</span></div>' +
+      '<div id="upd-state" style="min-height:26px"><div class="tiny dim">Нажмите «Проверить», чтобы сравнить с GitHub.</div></div>' +
+      '<div class="row wrap" style="gap:8px;margin-top:12px">' +
+      '<button class="btn" data-upd="check">' + U.icon('search', 14) + ' Проверить обновления</button>' +
+      '<button class="btn ghost" data-upd="page" title="Список релизов на GitHub">' + U.icon('external', 13) + ' Список релизов</button>' +
+      '</div></div>'
+
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">О приложении</div><div class="card-sub">Критериум</div></div></div>' +
       '<div class="row" style="padding:6px 0"><span class="small muted">Версия</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.version) + '</span></div>' +
       '<div class="row" style="padding:6px 0"><span class="small muted">Electron</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.electron) + '</span></div>' +
@@ -758,6 +766,71 @@ window.K = window.K || {};
     view.innerHTML = shell(html)
 
     U.$$('[data-external]', view).forEach((btn) => btn.addEventListener('click', () => api.openExternal(btn.dataset.external)))
+
+    // ---------- Карточка «Обновления» ----------
+    const updState = { busy: null, percent: 0, ready: null, latest: null, error: null, checkedAt: 0, notes: '' }
+
+    function renderUpdState() {
+      const el = U.$('#upd-state')
+      if (!el) return
+      let html = ''
+      if (updState.busy === 'check') html = '<div class="tiny dim">Проверяем релизы GitHub…</div>'
+      else if (updState.busy === 'download') html = '<div class="upd-bar"><i style="width:' + updState.percent + '%"></i></div>' +
+        '<div class="tiny dim" style="margin-top:8px">Загрузка… ' + updState.percent + '%</div>'
+      else if (updState.ready) html = '<div class="chip good">Обновление ' + U.esc(updState.ready.version) + ' скачано</div>' +
+        '<div class="row wrap" style="gap:8px;margin-top:10px"><button class="btn primary" data-upd="install">Установить и перезапустить</button></div>' +
+        '<div class="tiny dim" style="margin-top:8px">Приложение закроется, заменит файл и запустится заново.</div>'
+      else if (updState.latest) html = '<div class="row" style="padding:6px 0"><span class="small">Доступна версия <b>' + U.esc(updState.latest) + '</b></span>' +
+        '<span class="spacer"></span><button class="btn sm primary" data-upd="download">Загрузить</button></div>' +
+        (updState.notes ? '<div class="tiny dim" style="line-height:1.55;margin-top:8px">' + U.esc(updState.notes.slice(0, 220)) + '</div>' : '')
+      else if (updState.error) html = '<div class="tiny dim">Не удалось проверить: ' + U.esc(updState.error) + '</div>'
+      else if (updState.checkedAt) html = '<div class="chip good">У вас последняя версия</div>'
+      el.innerHTML = html
+      U.$$('[data-upd]', el).forEach((b) => b.addEventListener('click', () => updAction(b.dataset.upd)))
+    }
+
+    async function updAction(kind) {
+      if (kind === 'check') {
+        updState.busy = 'check'
+        updState.error = null
+        renderUpdState()
+        try {
+          const s = await api.update.check()
+          updState.latest = s.latest
+          updState.checkedAt = s.checkedAt
+          updState.error = s.error
+          updState.notes = s.notes || ''
+        } catch (err) { updState.error = String(err) }
+        updState.busy = null
+        renderUpdState()
+      } else if (kind === 'download') {
+        updState.busy = 'download'
+        updState.percent = 0
+        updState.error = null
+        renderUpdState()
+        api.update.onProgress((p) => {
+          updState.percent = p.percent
+          const bar = U.$('#upd-state .upd-bar i')
+          if (bar) bar.style.width = p.percent + '%'
+        })
+        try {
+          await api.update.download()
+          updState.ready = { version: updState.latest }
+        } catch (err) { updState.error = String(err) }
+        updState.busy = null
+        renderUpdState()
+      } else if (kind === 'install') {
+        try { await api.update.install() } catch { U.toast('Не удалось запустить установку', 'bad') }
+      } else if (kind === 'page') {
+        api.openExternal('https://github.com/Xerenyn/kriterium/releases/latest')
+      }
+    }
+
+    U.$$('[data-upd]', view).forEach((b) => b.addEventListener('click', () => updAction(b.dataset.upd)))
+    api.update.status().then((s) => {
+      if (s.state === 'available') updState.latest = s.latest
+      if (s.state === 'uptodate') { updState.checkedAt = Date.now(); updState.latest = null }
+    }).catch(() => {})
 
     U.$$('[data-color]', view).forEach((btn) => btn.addEventListener('click', async () => {
       await api.profile.save({ accent: btn.dataset.color })

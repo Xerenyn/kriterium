@@ -671,6 +671,14 @@ window.K = window.K || {};
         U.$('.tg-link', version)?.addEventListener('click', () => api.openExternal('https://t.me/Kriteriumapp'))
       }
 
+      // Автообновление: уведомление о новой версии
+      api.update?.onAvailable?.((payload) => {
+        U.toast('Выпущена версия ' + payload.latest + ' — Настройки → Обновления', 'good')
+      })
+      api.update?.onReady?.(() => {
+        U.toast('Обновление скачано — можно устанавливать', 'good')
+      })
+
       if (location.hash) app.render()
       else location.hash = '#/overview'
       app.reloadCloudPatches(true)

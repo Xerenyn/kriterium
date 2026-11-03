@@ -83,6 +83,16 @@ contextBridge.exposeInMainWorld('krit', {
 
   patchFile: () => invoke('patch:open'),
 
+  update: {
+    status: () => invoke('update:status'),
+    check: () => invoke('update:check'),
+    download: () => invoke('update:download'),
+    install: () => invoke('update:install'),
+    onProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),
+    onReady: (cb) => ipcRenderer.on('update:ready', (_e, r) => cb(r)),
+    onAvailable: (cb) => ipcRenderer.on('update:available', (_e, r) => cb(r))
+  },
+
   win: {
     minimize: () => invoke('window:minimize'),
     maximize: () => invoke('window:maximize'),

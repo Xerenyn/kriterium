@@ -5,6 +5,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 const { createStore } = require('./src/core/store')
 const { createCloud } = require('./src/core/cloud')
+const updater = require('./updater')
 
 const ROOT = __dirname
 let mainWindow = null
@@ -291,12 +292,17 @@ function registerIpc() {
   })
   ipcMain.handle('window:close', () => mainWindow?.close())
 
+  ipcMain.handle('update:status', () => updater.buildStatus())
+  ipcMain.handle('update:check', () => updater.checkForUpdate(true))
+  ipcMain.handle('update:download', () => updater.downloadUpdate())
+  ipcMain.handle('update:install', () => updater.installUpdate())
+
   ipcMain.handle('shell:openExternal', (_e, value) => {
     if (typeof value !== 'string') return false
     try {
       const url = new URL(value)
       const host = url.hostname.toLowerCase()
-      const allowed = ['steampowered.com', 'steamcommunity.com', 'metacritic.com', 'opencritic.com', 't.me', 'telegram.me']
+      const allowed = ['steampowered.com', 'steamcommunity.com', 'metacritic.com', 'opencritic.com', 't.me', 'telegram.me', 'github.com']
       if (url.protocol !== 'https:' || url.username || url.password || !allowed.some((domain) => host === domain || host.endsWith('.' + domain))) return false
       return shell.openExternal(url.href)
     } catch { return false }
@@ -309,6 +315,14 @@ app.whenReady().then(() => {
   cloud = createCloud(path.join(app.getPath('userData'), 'cloud.json'), safeStorage, { isPackaged: app.isPackaged })
   registerIpc()
   createWindow()
+
+  // Автопроверка обновлений: только в собранном приложении и не чаще раза в полчаса.
+  updater.bind(send)
+  if (app.isPackaged && !process.env.KRIT_UPD_DISABLE) {
+    setTimeout(async () => {
+      try { await updater.checkForUpdate(false) } catch { /* фон сам справится с ошибкой */ }
+    }, 15000)
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

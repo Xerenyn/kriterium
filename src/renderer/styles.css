@@ -151,6 +151,8 @@ p { margin: 0; }
 .side-version { padding: 0 11px; font-size: 10px; color: #425066; letter-spacing: .04em; }
 .side-version .tg-link { color: #6f9ab1; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .side-version .tg-link:hover { color: #8fc0da; }
+.upd-bar { display: block; height: 6px; border-radius: 6px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+.upd-bar i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #7c9480)); transition: width .25s; }
 
 .main {
   flex: 1; min-width: 0;

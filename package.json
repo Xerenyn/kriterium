@@ -1,7 +1,7 @@
 {
   "name": "kriterium",
   "productName": "Критериум",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Настольное приложение для глубокой оценки видеоигр по критериям",
   "main": "main.js",
   "author": "Личный профиль",
