@@ -117,13 +117,12 @@ window.K = window.K || {};
       const view = U.$('#view')
       if (!view) return
       view.scrollTop = 0
-      if (route.name === 'overview') renderOverview(view)
+      if (route.name === 'overview' || route.name === 'library') renderOverview(view)
       else if (route.name === 'catalog') window.K.Social.renderCatalog(view)
       else if (route.name === 'steam') window.K.Social.renderSteamGame(view, route.id)
       else if (route.name === 'community') window.K.Social.renderCommunity(view)
       else if (route.name === 'person') window.K.Social.renderPerson(view, route.id)
       else if (route.name === 'account' || route.name === 'profile') window.K.Pages.renderProfile(view)
-      else if (route.name === 'library') renderLibrary(view)
       else if (route.name === 'game') renderDetail(view, route.id)
       else if (route.name === 'new') window.K.Editor.render(view, null)
       else if (route.name === 'review') window.K.Editor.render(view, null, route.id)
@@ -151,7 +150,7 @@ window.K = window.K || {};
   }
 
   function setActiveNav(route) {
-    const map = { overview: '#/overview', new: '#/new', review: '#/catalog', edit: '#/library', library: '#/library', game: '#/library', catalog: '#/catalog', steam: '#/catalog', community: '#/community', person: '#/community', account: '#/profile', profile: '#/profile', patches: '#/patches', settings: '#/settings' }
+    const map = { overview: '#/overview', new: '#/new', review: '#/catalog', edit: '#/overview', library: '#/overview', game: '#/overview', catalog: '#/catalog', steam: '#/catalog', community: '#/community', person: '#/community', account: '#/profile', profile: '#/profile', patches: '#/patches', settings: '#/settings' }
     U.$$('#nav .nav-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.route === map[route.name])
     })
@@ -207,10 +206,6 @@ window.K = window.K || {};
     const average = avg(complete.map((s) => s.score.total))
     const hours = games.reduce((sum, g) => sum + (Number(g.hours) || 0), 0)
     const genreIds = new Set(games.map((g) => g.genre))
-    const recent = scored
-      .slice()
-      .sort((a, b) => new Date(b.game.updatedAt) - new Date(a.game.updatedAt))
-      .slice(0, 4)
     const top = complete.slice().sort((a, b) => b.score.total - a.score.total).slice(0, 3)
 
     const genreStats = {}
@@ -249,24 +244,31 @@ window.K = window.K || {};
       statCard('', U.formatNumber(hours, 0), 'часов наиграно') +
       '</div>'
 
-    html += '<div class="two-col">'
+    const catalogGenres = app.catalog(null).genres.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
+    const catalogStatuses = app.catalog(null).statuses
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Последние оценки</div>' +
-      '<div class="card-sub">То, что вы оценивали недавно</div></div>' +
-      '<button class="btn sm ghost" data-route="#/library">Все оценки</button></div>'
-    if (!recent.length) {
-      html += emptyBlock('Пока пусто', 'Добавьте первую игру — профиль начнёт собирать статистику.', '<button class="btn primary sm" data-route="#/new">Оценить игру</button>')
-    } else {
-      html += '<div class="game-list">'
-      for (const item of recent) {
-        html += gameRow(item.game, item.score)
-      }
-      html += '</div>'
-    }
-    html += '</div>'
+    html += '<div class="subhead"><h3>Мои оценки</h3><div class="line"></div><span class="tiny dim" id="lib-count"></span></div>'
+
+    html += '<div class="tools">' +
+      '<label class="search">' + U.icon('search', 15) + '<input id="lib-search" type="text" placeholder="Найти игру…" value="' + U.attr(libraryState.search) + '"></label>' +
+      '<select id="lib-genre" style="width:190px"><option value="">Все жанры</option>' +
+      catalogGenres.map((g) => '<option value="' + U.attr(g.id) + '"' + (libraryState.genre === g.id ? ' selected' : '') + '>' + U.esc(g.name) + '</option>').join('') +
+      '</select>' +
+      '<select id="lib-status" style="width:150px"><option value="">Любой статус</option>' +
+      catalogStatuses.map((s) => '<option value="' + U.attr(s.id) + '"' + (libraryState.status === s.id ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') +
+      '</select>' +
+      '<select id="lib-sort" style="width:170px">' +
+      [['recent', 'Сначала новые'], ['score_desc', 'Балл: больше'], ['score_asc', 'Балл: меньше'], ['title', 'По названию'], ['hours', 'По часам']]
+        .map(([v, l]) => '<option value="' + v + '"' + (libraryState.sort === v ? ' selected' : '') + '>' + l + '</option>').join('') +
+      '</select>' +
+      '</div>'
+
+    html += '<div id="library-grid"></div>'
+
+    html += '<div class="two-col" style="margin-top:20px">'
 
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Из чего складывается оценка</div>' +
-      '<div class="card-sub">Доля каждого уровня в итоговом балле</div></div></div>' +
+      '<div class="card-sub">Трёхуровневая система 60 / 25 / 15 с жанровой нормализацией</div></div></div>' +
       '<div class="formula-strip"><span></span><span></span><span></span></div>' +
       '<div class="formula-legend">' +
       '<span><i class="dot" style="background:var(--accent)"></i>Основные · 60</span>' +
@@ -274,25 +276,28 @@ window.K = window.K || {};
       '<span><i class="dot" style="background:#9c8e64"></i>Личные впечатления · 15</span>' +
       '</div>' +
       '<div class="divider"></div>' +
-      '<div class="small muted" style="line-height:1.6">Жанр влияет на важность отдельных категорий. Например, в визуальной новелле сюжет учитывается сильнее, а в автосиме — слабее.</div>' +
+      '<div class="small muted" style="line-height:1.6">126 критериев в 19 категориях и 30 жанровых профилях. Фундаментальные аспекты игры (60 баллов) вчетверо весомее субъективных впечатлений (15 баллов), а веса категорий автоматически адаптируются под выбранный жанр.</div>' +
+      '<div class="row wrap" style="gap:5px;margin-top:10px">' +
+      (app.catalog(null).grades || []).map((g) => '<span class="chip" style="color:' + U.attr(g.color) + '">' + U.esc(g.label) + ' · ' + U.esc(g.letter) + '</span>').join('') +
+      '</div>' +
       '<div style="margin-top:13px"><button class="btn sm ghost" data-action="formula">Подробнее о формуле</button></div>' +
       '</div>'
 
-    html += '</div>'
-
-    if (genres.length) {
-      html += '<div class="card pad" style="margin-top:16px"><div class="card-head"><div><div class="card-title">Жанры</div>' +
-        '<div class="card-sub">Средний балл по жанрам: сравнение только с похожими играми</div></div></div>'
+    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Жанры</div>' +
+      '<div class="card-sub">Средний балл по жанрам: сравнение только с похожими играми</div></div></div>'
+    if (!genres.length) {
+      html += '<div class="small dim">Оцените игры в разных жанрах — здесь появится сравнение.</div>'
+    } else {
       for (const g of genres) {
         html += '<div class="row" style="padding:8px 0;border-bottom:1px solid var(--line-soft)">' +
-          '<div style="width:190px" class="ellipsis small">' + U.esc(app.genreName(g.id)) + '</div>' +
+          '<div style="min-width:0;flex:1" class="ellipsis small">' + U.esc(app.genreName(g.id)) + '</div>' +
           '<div class="bar grow"><i style="width:' + (g.avg || 0) + '%;background:' + U.scoreColor(g.avg) + '"></i></div>' +
           '<div class="mono" style="width:52px;text-align:right;font-size:12px">' + (g.avg == null ? '—' : U.formatNumber(g.avg)) + '</div>' +
           '<div class="dim tiny" style="width:60px;text-align:right">' + g.count + ' ' + U.plural(g.count, 'игра', 'игры', 'игр') + '</div>' +
           '</div>'
       }
-      html += '</div>'
     }
+    html += '</div></div>'
 
     if (top.length) {
       html += '<div class="subhead"><h3>Мой топ</h3><div class="line"></div><span class="tiny dim">по вашим оценкам</span></div>'
@@ -304,6 +309,19 @@ window.K = window.K || {};
     html += '</div>'
     view.innerHTML = html
 
+    const search = U.$('#lib-search', view)
+    if (search) {
+      const update = () => {
+        libraryState.search = search.value
+        paintLibraryGrid()
+      }
+      search.addEventListener('input', U.debounce(update, 120))
+      U.$('#lib-genre', view).addEventListener('change', (e) => { libraryState.genre = e.target.value; paintLibraryGrid() })
+      U.$('#lib-status', view).addEventListener('change', (e) => { libraryState.status = e.target.value; paintLibraryGrid() })
+      U.$('#lib-sort', view).addEventListener('change', (e) => { libraryState.sort = e.target.value; paintLibraryGrid() })
+      paintLibraryGrid()
+    }
+
     U.$$('[data-action="formula"]', view).forEach((btn) => btn.addEventListener('click', openFormula))
   }
 
@@ -314,16 +332,6 @@ window.K = window.K || {};
 
   function emptyBlock(title, text, action) {
     return '<div class="empty"><h3>' + U.esc(title) + '</h3><p>' + U.esc(text) + '</p>' + (action || '') + '</div>'
-  }
-
-  function gameRow(game, score) {
-    const total = score.rated ? Math.round(score.total * 10) / 10 : null
-    return '<div class="game-row" data-route="#/game/' + U.attr(game.id) + '">' +
-      '<div class="thumb">' + U.esc(U.initials(game.title)) + '</div>' +
-      '<div class="grow"><div class="small ellipsis" style="font-weight:600">' + U.esc(game.title) + '</div>' +
-      '<div class="tiny dim ellipsis">' + U.esc(app.genreName(game.genre)) + (game.year ? ' · ' + game.year : '') + ' · ' + U.esc(U.relativeDate(game.updatedAt)) + '</div></div>' +
-      '<div class="score-pill" style="color:' + U.scoreColor(total) + '">' + (total == null ? '—' : U.formatNumber(total)) + '</div>' +
-      '</div>'
   }
 
   function gameCard(game, score) {
@@ -342,66 +350,48 @@ window.K = window.K || {};
   }
 
   function openFormula() {
+    const catalog = app.catalog(null)
+    const grades = catalog.grades || []
+    const mainCats = catalog.categories.filter((c) => c.tier === 'main').map((c) => c.name).join(', ')
+    const extraCats = catalog.categories.filter((c) => c.tier === 'extra').map((c) => c.name).join(', ')
+    const subjCats = catalog.categories.filter((c) => c.tier === 'subjective').map((c) => c.name).join(', ')
+
     const html =
-      '<div class="small" style="line-height:1.7;color:#c9c6bf">' +
-      '<p>Итог — до 100 баллов. Уровни дают разное количество баллов:</p>' +
+      '<div class="small" style="line-height:1.68;color:#c9c6bf">' +
+      '<p>Итоговая оценка строится по шкале от <b>0 до 100 баллов</b> из <b>126 критериев</b>, объединённых в <b>19 категорий</b> и разделённых на три независимых уровня:</p>' +
       '<div class="formula-strip" style="margin:14px 0 8px"><span></span><span></span><span></span></div>' +
       '<div class="formula-legend" style="margin-bottom:16px">' +
-      '<span><i class="dot" style="background:var(--accent)"></i>Основные — 60</span>' +
-      '<span><i class="dot" style="background:#7c8f80"></i>Дополнительные — 25</span>' +
-      '<span><i class="dot" style="background:#9c8e64"></i>Личные впечатления — 15</span></div>' +
-      '<p><b>1. Учитывается жанр.</b> Важность категорий зависит от жанра. Например, в RPG больше внимания уделяется сюжету, а в автосимуляторе — управлению и технике. Доли трёх уровней при этом остаются прежними: 60, 25 и 15 баллов.</p>' +
-      '<p style="margin-top:10px"><b>2. Оценка критерия.</b> Каждый критерий оценивается от 0 до 10. Можно поставить «н/п», если аспект неприменим (например, сетевая игра в одиночном проекте).</p>' +
-      '<p style="margin-top:10px"><b>3. Считается категория.</b> Оценки критериев объединяются с учётом их веса. Затем баллы категории распределяются внутри её уровня.</p>' +
-      '<p style="margin-top:10px"><b>4. Если оценка не заполнена.</b> Баллы пустых категорий распределяются между теми, где уже есть оценки. Поэтому приложение отдельно показывает процент заполнения.</p>' +
-      '<p style="margin-top:10px"><b>5. Заполнение.</b> Это доля критериев, которым вы выставили оценку. Если заполнено меньше половины, итог помечается как предварительный.</p>' +
+      '<span><i class="dot" style="background:var(--accent)"></i>Основные — 60 баллов</span>' +
+      '<span><i class="dot" style="background:#7c8f80"></i>Дополнительные — 25 баллов</span>' +
+      '<span><i class="dot" style="background:#9c8e64"></i>Личный опыт — 15 баллов</span></div>' +
+
+      '<div class="card pad" style="background:var(--panel-2);margin-bottom:14px">' +
+      '<div style="margin-bottom:8px"><b style="color:var(--text)">I. Основные аспекты (60 баллов · 8 категорий)</b><div class="tiny dim" style="margin-top:2px">' + U.esc(mainCats) + '</div><div class="tiny muted" style="margin-top:3px">Фундамент игры: геймплейное ядро, механики, левел-дизайн, нарратив, арт, звук, техническое исполнение и UX.</div></div>' +
       '<div class="divider"></div>' +
-      '<p class="tiny dim">Баллы каждого уровня складываются. Итог округляется до десятых.</p>' +
+      '<div style="margin-bottom:8px"><b style="color:var(--text)">II. Дополнительные аспекты (25 баллов · 6 категорий)</b><div class="tiny dim" style="margin-top:2px">' + U.esc(extraCats) + '</div><div class="tiny muted" style="margin-top:3px">Глубина контента, реиграбельность, оригинальность идей, темп, структура сессий, онлайн и ценность покупки.</div></div>' +
+      '<div class="divider"></div>' +
+      '<div><b style="color:var(--text)">III. Личный опыт (15 баллов · 5 категорий)</b><div class="tiny dim" style="margin-top:2px">' + U.esc(subjCats) + '</div><div class="tiny muted" style="margin-top:3px">Эмоциональный отклик, послевкусие и попадание в личный вкус. Ограничение в 15 баллов не даёт субъективным эмоциям перевесить объективное качество игры (60 баллов).</div></div>' +
+      '</div>' +
+
+      '<p><b>1. Оценка критериев (0–10 и «н/п»).</b> Каждый критерий оценивается по 10-балльной шкале (с шагом 0,5 или 1). Если критерий к игре неприменим (например, сетевой код в одиночной сюжетной игре), ставится отметка <b>«н/п»</b> — такой критерий полностью исключается из расчёта и не занижает и не завышает оценку.</p>' +
+      '<p style="margin-top:10px"><b>2. Средневзвешенный балл категории.</b> У каждого критерия внутри категории есть собственный вес значимости <code class="mono">w</code>. Балл категории от 0 до 10 считается как взвешенное среднее заполненных критериев: <code class="mono">Score = Σ(v × w) / Σ(w)</code>.</p>' +
+      '<p style="margin-top:10px"><b>3. Жанровые профили и нормализация (30 жанров).</b> Игры оцениваются строго внутри своего жанра. У каждого из 30 жанров заданы коэффициенты важности категорий (от <code class="mono">×0,05</code> до <code class="mono">×5</code>): например, в RPG и визуальных новеллах повышен множитель сюжета, а в гонках и файтингах — отклика управления и физики. После умножения весов на жанровый коэффициент они нормализуются внутри каждого уровня так, чтобы потолок уровня всегда оставался ровно <b>60</b>, <b>25</b> и <b>15 баллов</b>.</p>' +
+      '<p style="margin-top:10px"><b>4. Вклад категории и пустые разделы.</b> Каждая активная категория приносит в копилку уровня <code class="mono">Points × (Score / 10)</code> баллов. Если вся категория пока не заполнена, её бюджет пропорционально перераспределяется между оценёнными категориями того же уровня.</p>' +
+      '<p style="margin-top:10px"><b>5. Покрытие и контроль качества.</b> Покрытие показывает долю оценённых критериев от всех применимых (<code class="mono">rated / applicable</code>). При заполнении менее <b>50%</b> балл помечается как предварительный. При публикации в сообщество система также проверяет согласованность выставленных критериев, итогового балла и текста рецензии.</p>' +
+
+      '<div class="divider"></div>' +
+      '<div style="margin-bottom:6px"><b style="color:var(--text)">Шкала итоговых категорий</b></div>' +
+      '<div class="row wrap" style="gap:6px;margin-bottom:10px">' +
+      grades.map((g) => '<span class="chip" style="color:' + U.attr(g.color) + ';border-color:color-mix(in srgb, ' + U.attr(g.color) + ' 40%, transparent)"><b>' + U.esc(g.label) + '</b> · ' + U.esc(g.letter) + ' баллов</span>').join('') +
+      '</div>' +
+      '<p class="tiny dim">Баллы трёх уровней складываются и округляются до десятых (например, 84,6 / 100).</p>' +
       '</div>'
-    U.openModal({ title: 'Как считается итоговый балл', body: html, width: 640 })
+    U.openModal({ title: 'Как считается итоговый балл в «Критериуме»', body: html, width: 760 })
   }
 
   /* ---------- библиотека ---------- */
 
   const libraryState = { search: '', genre: '', status: '', sort: 'recent' }
-
-  function renderLibrary(view) {
-    const catalog = app.catalog(null)
-    const genres = catalog.genres.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'))
-    const statuses = catalog.statuses
-
-    let html = pageHead('Коллекция', 'Мои оценки', 'Все оценённые игры. Сравнивать имеет смысл только игры одного жанра.', '<button class="btn primary" data-route="#/new">' + U.icon('plus', 15) + ' Новая оценка</button>')
-
-    html += '<div class="tools">' +
-      '<label class="search">' + U.icon('search', 15) + '<input id="lib-search" type="text" placeholder="Найти игру…" value="' + U.attr(libraryState.search) + '"></label>' +
-      '<select id="lib-genre" style="width:190px"><option value="">Все жанры</option>' +
-      genres.map((g) => '<option value="' + U.attr(g.id) + '"' + (libraryState.genre === g.id ? ' selected' : '') + '>' + U.esc(g.name) + '</option>').join('') +
-      '</select>' +
-      '<select id="lib-status" style="width:150px"><option value="">Любой статус</option>' +
-      statuses.map((s) => '<option value="' + U.attr(s.id) + '"' + (libraryState.status === s.id ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') +
-      '</select>' +
-      '<select id="lib-sort" style="width:170px">' +
-      [['recent', 'Сначала новые'], ['score_desc', 'Балл: больше'], ['score_asc', 'Балл: меньше'], ['title', 'По названию'], ['hours', 'По часам']]
-        .map(([v, l]) => '<option value="' + v + '"' + (libraryState.sort === v ? ' selected' : '') + '>' + l + '</option>').join('') +
-      '</select>' +
-      '<span class="spacer"></span><span class="tiny dim" id="lib-count"></span>' +
-      '</div>'
-
-    html += '<div id="library-grid"></div>'
-    view.innerHTML = shell(html)
-
-    const search = U.$('#lib-search', view)
-    const update = () => {
-      libraryState.search = search.value
-      paintLibraryGrid()
-    }
-    search.addEventListener('input', U.debounce(update, 120))
-    U.$('#lib-genre', view).addEventListener('change', (e) => { libraryState.genre = e.target.value; paintLibraryGrid() })
-    U.$('#lib-status', view).addEventListener('change', (e) => { libraryState.status = e.target.value; paintLibraryGrid() })
-    U.$('#lib-sort', view).addEventListener('change', (e) => { libraryState.sort = e.target.value; paintLibraryGrid() })
-
-    paintLibraryGrid()
-  }
 
   function paintLibraryGrid() {
     const grid = U.$('#library-grid')
