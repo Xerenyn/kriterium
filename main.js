@@ -191,6 +191,7 @@ function registerIpc() {
   ipcMain.handle('cloud:signUp', (_e, input) => cloud.signUp(input))
   ipcMain.handle('cloud:signIn', (_e, input) => cloud.signIn(input))
   ipcMain.handle('cloud:signOut', () => cloud.signOut())
+  ipcMain.handle('cloud:confirmSession', () => cloud.confirmSession())
   ipcMain.handle('cloud:myProfile', () => cloud.myProfile())
   ipcMain.handle('cloud:isDeveloper', () => cloud.isDeveloper())
   ipcMain.handle('cloud:setProfileBadges', (_e, handle, badges) => cloud.setProfileBadges(handle, badges))

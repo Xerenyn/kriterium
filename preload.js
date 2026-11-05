@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('krit', {
     signUp: (input) => invoke('cloud:signUp', input),
     signIn: (input) => invoke('cloud:signIn', input),
     signOut: () => invoke('cloud:signOut'),
+
+    confirmSession: () => invoke('cloud:confirmSession'),
     myProfile: () => invoke('cloud:myProfile'),
     isDeveloper: () => invoke('cloud:isDeveloper'),
     setProfileBadges: (handle, badges) => invoke('cloud:setProfileBadges', handle, badges),

@@ -220,6 +220,7 @@ window.K = window.K || {};
         }
         window.K.app.cloudStatus = await api.cloud.status()
         syncDeveloperRole(window.K.app.cloudStatus)
+        window.K.app.refreshProfileMini?.()
         await window.K.app.reloadCloudPatches(false)
         U.toast(registering ? 'Аккаунт создан' : 'Вы вошли', 'good')
         if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
@@ -393,6 +394,7 @@ window.K = window.K || {};
       await api.cloud.signOut()
       window.K.app.cloudStatus = await api.cloud.status()
       syncDeveloperRole(window.K.app.cloudStatus)
+      window.K.app.refreshProfileMini?.()
       await window.K.app.reloadCloudPatches(false)
       if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
       else renderAccount(view, rootView)
@@ -1589,8 +1591,19 @@ window.K = window.K || {};
       '<strong style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + '</strong></div>'
   }
 
+  /* Открыть форму входа/регистрации (гость пытается оценить игру и т.п.) */
+  function openAuth(mode) {
+    accountMode = mode === 'signup' ? 'signup' : 'signin'
+    if ((location.hash || '#/overview') !== '#/account') location.hash = '#/account'
+    else {
+      const view = U.$('#view')
+      if (view) window.K.Pages?.renderProfile(view)
+    }
+  }
+
   window.K.Social = {
     renderAccount,
+    openAuth,
     renderCatalog,
     renderSteamGame,
     renderCommunity,

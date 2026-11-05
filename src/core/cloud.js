@@ -63,6 +63,9 @@ function createCloud(configPath, safeStorage, options = {}) {
   const defaultAnonKey = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_ANON_KEY
   let config = { url: defaultUrl, anonKey: defaultAnonKey, encryptedSession: '', steamRegion: 'ru' }
   let session = null
+  // Сохранённая сессия «спит» до подтверждения пользователем при запуске приложения,
+  // поэтому гость не оказывается в аккаунте молча.
+  let sessionActive = false
   const steamDetailsCache = new Map()
   const featuredCacheByRegion = new Map()
   const CURATED_GAMES = [
@@ -130,11 +133,14 @@ function createCloud(configPath, safeStorage, options = {}) {
     return {
       configured: configured(),
       url: config.url,
-      signedIn: !!(session && session.access_token && session.user),
+      signedIn: !!(sessionActive && session && session.access_token && session.user),
       user: session && session.user ? {
         id: session.user.id,
         email: session.user.email || ''
       } : null,
+      // Есть сохранённый вход с прошлого запуска, который пользователь ещё не подтвердил
+      restorableSession: !!(session && session.user && !sessionActive),
+      restorableEmail: session && session.user ? (session.user.email || '') : '',
       encryptionAvailable: !!(safeStorage && safeStorage.isEncryptionAvailable())
     }
   }
@@ -223,7 +229,10 @@ function createCloud(configPath, safeStorage, options = {}) {
   async function ensureSession() {
     await load()
     const current = await refreshSession()
-    if (!current) throw new Error('Войдите в аккаунт, чтобы продолжить.')
+    if (!current || !sessionActive) {
+      sessionActive = false
+      throw new Error('Войдите в аккаунт, чтобы продолжить.')
+    }
     return current
   }
 
@@ -265,7 +274,10 @@ function createCloud(configPath, safeStorage, options = {}) {
         method: 'POST',
         body: JSON.stringify({ email, password, data: { display_name: displayName || 'Игрок' } })
       }, false)
-      if (data && data.access_token) await persistSession(data)
+      if (data && data.access_token) {
+        sessionActive = true
+        await persistSession(data)
+      }
       return {
         signedIn: !!(data && data.access_token),
         confirmationRequired: !(data && data.access_token),
@@ -283,6 +295,7 @@ function createCloud(configPath, safeStorage, options = {}) {
         body: JSON.stringify({ email, password })
       }, false)
       await persistSession(data)
+      sessionActive = true
       return publicStatus()
     },
 
@@ -292,8 +305,19 @@ function createCloud(configPath, safeStorage, options = {}) {
         try { await request('/auth/v1/logout', { method: 'POST' }) } catch { /* local sign-out still succeeds */ }
       }
       session = null
+      sessionActive = false
       config.encryptedSession = ''
       await persist()
+      return publicStatus()
+    },
+
+    /* Подтверждение входа, сохранённого с прошлого запуска */
+    async confirmSession() {
+      await load()
+      if (!session) return publicStatus()
+      try { await refreshSession() } catch { /* offline: confirmation still applies to the stored session */ }
+      if (!session) return publicStatus() // refresh discards an expired session
+      sessionActive = true
       return publicStatus()
     },
 

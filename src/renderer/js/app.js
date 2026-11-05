@@ -113,6 +113,8 @@ window.K = window.K || {};
       this.render()
     },
 
+    refreshProfileMini: renderProfileMini,
+
     render() {
       const route = parseRoute()
       setActiveNav(route)
@@ -122,6 +124,11 @@ window.K = window.K || {};
         U.toast('Раздел «Патчи» доступен только разработчику', 'bad')
         if (location.hash !== '#/overview') location.hash = '#/overview'
         else app.render()
+        return
+      }
+      if ((route.name === 'new' || route.name === 'review') && !app.cloudStatus?.signedIn) {
+        U.toast('Оценить игру можно после входа в аккаунт', 'bad')
+        window.K.Social?.openAuth?.('signup')
         return
       }
       view.scrollTop = 0
@@ -189,10 +196,13 @@ window.K = window.K || {};
   function renderProfileMini() {
     const el = U.$('#profile-mini')
     if (!el) return
+    const signedIn = !!app.cloudStatus?.signedIn
+    const name = signedIn ? (app.profile.nickname || 'Игрок') : 'Гость'
+    const sub = signedIn ? (app.profile.tagline || 'мой профиль') : 'войдите, чтобы оценивать'
     el.innerHTML =
-      '<div class="mini-avatar">' + U.esc(app.profile.avatar || '🎮') + '</div>' +
-      '<div class="grow"><div class="mini-name ellipsis">' + U.esc(app.profile.nickname || 'Игрок') + '</div>' +
-      '<div class="mini-sub ellipsis">' + U.esc(app.profile.tagline || 'мой профиль') + '</div></div>'
+      '<div class="mini-avatar">' + U.esc(signedIn ? (app.profile.avatar || '🎮') : '👤') + '</div>' +
+      '<div class="grow"><div class="mini-name ellipsis">' + U.esc(name) + '</div>' +
+      '<div class="mini-sub ellipsis">' + U.esc(sub) + '</div></div>'
   }
 
   function renderNavCount() {
@@ -661,6 +671,56 @@ window.K = window.K || {};
 
   /* ---------- загрузка ---------- */
 
+  /* Восстановленное шифрованное хранилище сессии «спит»: при запуске просим подтверждение */
+  function showSessionConfirm() {
+    const st = app.cloudStatus || {}
+    if (!st.configured || !st.restorableSession) return
+    const email = st.restorableEmail || ''
+    U.openModal({
+      title: 'Вход в аккаунт',
+      width: 470,
+      body: '<p class="muted" style="font-size:12.5px;line-height:1.65">В прошлый раз в приложении был аккаунт <b style="color:var(--fg)">' + U.esc(email || 'без почты') + '</b>.<br>Продолжить на нём в этом сеансе?</p>',
+      footer:
+        '<button class="btn ghost" data-guest>Остаться гостем</button>' +
+        '<button class="btn ghost" data-switch>Другой аккаунт</button>' +
+        '<button class="btn primary" data-continue>Продолжить как этот</button>',
+      onMount({ root, close }) {
+        async function apply(status) {
+          app.cloudStatus = status
+          renderProfileMini()
+          await app.refreshDeveloperRole()
+          app.render()
+        }
+        U.$('[data-continue]', root)?.addEventListener('click', async () => {
+          const btn = U.$('[data-continue]', root)
+          btn.disabled = true
+          try {
+            const status = await api.cloud.confirmSession()
+            close()
+            await apply(status)
+            if (status.signedIn) U.toast('Вы вошли как ' + (app.profile.nickname || status.user?.email || 'участник'), 'good')
+          } catch (err) {
+            U.toast(err.message || 'Не удалось подтвердить вход', 'bad')
+            btn.disabled = false
+          }
+        })
+        U.$('[data-switch]', root)?.addEventListener('click', async () => {
+          try {
+            close()
+            const status = await api.cloud.signOut()
+            await apply(status)
+          } catch { close() }
+          window.K.Social?.openAuth?.('signin')
+        })
+        U.$('[data-guest]', root)?.addEventListener('click', async () => {
+          close()
+          await app.refreshDeveloperRole()
+          renderProfileMini()
+        })
+      }
+    })
+  }
+
   async function boot() {
     try {
       const [info, base, patches, profile, games, ratings, showHints, step, cloudStatus] = await Promise.all([
@@ -713,6 +773,7 @@ window.K = window.K || {};
       syncLocalSteamReviews()
       U.$('#boot').classList.add('hide')
       setTimeout(() => { const b = U.$('#boot'); if (b) b.remove() }, 400)
+      showSessionConfirm()
     } catch (err) {
       console.error(err)
       const bootEl = U.$('#boot')

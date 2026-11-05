@@ -90,7 +90,10 @@
     check('маршрут ' + route + ' рендерится', view && view.innerText.trim().length > 20)
   }
 
-  // Редактор: поля и критерии на месте.
+  // Редактор: поля и критерии на месте. Смоук выполняется от имени гостя,
+  // поэтому для проверки редактора имитируем подтверждённую сессию:
+  // без неё гость перенаправляется на страницу входа.
+  K.app.cloudStatus = Object.assign({}, K.app.cloudStatus, { signedIn: true })
   location.hash = '#/new'
   await new Promise((r) => setTimeout(r, 260))
   check('в редакторе есть поле названия', !!document.querySelector('[data-field="title"]'))
