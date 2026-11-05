@@ -1155,6 +1155,33 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 .modal-body { padding: 20px 22px; overflow-y: auto; }
 .modal-foot { padding: 14px 22px; border-top: 1px solid var(--line-soft); display: flex; justify-content: flex-end; gap: 8px; }
 
+/* Список релизов (модал в настройках) */
+.rel-list { padding-left: 4px; }
+.rel-item { position: relative; display: flex; gap: 18px; padding: 16px 0 18px 26px; }
+.rel-item + .rel-item { border-top: 1px solid var(--line-soft); }
+.rel-item::before {
+  content: ""; position: absolute; left: 5px; top: 42px; width: 1px; height: calc(100% - 40px);
+  background: var(--line-soft);
+}
+.rel-item:last-child::before { display: none; }
+.rel-item::after {
+  content: ""; position: absolute; left: 0; top: 21px;
+  width: 11px; height: 11px; border-radius: 50%;
+  border: 2px solid var(--line); background: var(--bg-2);
+}
+.rel-item.installed::after { border-color: var(--accent); background: var(--accent); }
+.rel-side { width: 158px; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.rel-tag { align-self: flex-start; }
+.rel-title { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rel-inst { margin-left: 2px; }
+.rel-sec { color: var(--text); font-size: 13px; }
+.rel-notes { margin-top: 7px; font-size: 12.5px; line-height: 1.6; color: var(--muted); word-break: break-word; }
+.rel-notes b { color: var(--text); }
+.rel-link { color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.rel-link:hover { color: #fff; }
+.rel-quote { display: inline-block; margin: 2px 0; padding: 5px 12px; border-left: 2px solid var(--accent); border-radius: 0 8px 8px 0; background: var(--accent-soft); color: var(--text); font-style: normal; }
+.rel-code { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; padding: 1px 6px; border-radius: 6px; background: var(--panel-3); border: 1px solid var(--line-soft); color: var(--text); }
+
 .toast-root { position: fixed; right: 20px; bottom: 20px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
 .toast {
   min-width: 240px; max-width: 380px;

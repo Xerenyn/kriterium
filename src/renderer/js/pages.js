@@ -745,7 +745,7 @@ window.K = window.K || {};
       '<div id="upd-state" style="min-height:26px"><div class="tiny dim">Нажмите «Проверить», чтобы сравнить с GitHub.</div></div>' +
       '<div class="row wrap" style="gap:8px;margin-top:12px">' +
       '<button class="btn" data-upd="check">' + U.icon('search', 14) + ' Проверить обновления</button>' +
-      '<button class="btn ghost" data-upd="page" title="Список релизов на GitHub">' + U.icon('external', 13) + ' Список релизов</button>' +
+      '<button class="btn ghost" data-upd="releases" title="История версий внутри приложения">' + U.icon('chevron', 13) + ' Список релизов</button>' +
       '</div></div>'
 
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">О приложении</div><div class="card-sub">Критериум</div></div></div>' +
@@ -788,6 +788,57 @@ window.K = window.K || {};
       U.$$('[data-upd]', el).forEach((b) => b.addEventListener('click', () => updAction(b.dataset.upd)))
     }
 
+    /* Markdown-lite для заметок релиза: картинки убираем, ссылки и заголовки упрощаем */
+    function relNotesHtml(text) {
+      let s = U.esc(text || '')
+      s = s.replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+      s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) =>
+        /^https?:\/\//.test(url) ? '<span class="rel-link" data-link="' + url + '">' + label + '</span>' : label)
+      s = s.replace(/^&gt;\s?(.*)$/gm, '<span class="rel-quote">$1</span>')
+      s = s.replace(/^#{1,6}\s*(.+?)$/gm, '<b class="rel-sec">$1</b>')
+      s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
+      s = s.replace(/`([^`]+)`/g, '<span class="rel-code">$1</span>')
+      s = s.replace(/^\s*[-*]\s+/gm, '• ')
+      return s.replace(/\n/g, '<br>')
+    }
+
+    function openReleasesModal() {
+      const modal = U.openModal({
+        title: 'Список релизов',
+        width: 780,
+        body: '<div class="rel-loading tiny dim" style="text-align:center;padding:26px 0">Загружаем историю версий с GitHub…</div>',
+        footer: '<button class="btn ghost" data-close>Закрыть</button>'
+      })
+      api.update.releases().then((releases) => {
+        const installed = ('v' + app().info.version).toLowerCase()
+        if (!Array.isArray(releases) || !releases.length) {
+          modal.body.innerHTML = '<div class="tiny dim" style="text-align:center;padding:26px 0">На GitHub пока нет ни одного релиза.</div>'
+          return
+        }
+        modal.body.innerHTML =
+          '<div class="rel-list">' + releases.map((r) => {
+            const isInstalled = String(r.tag || '').toLowerCase() === installed
+            return '<div class="rel-item' + (isInstalled ? ' installed' : '') + '">' +
+              '<div class="rel-side">' +
+                '<span class="chip mono rel-tag">' + U.esc(r.tag || '—') + '</span>' +
+                '<div class="tiny dim">' + U.formatDate(r.publishedAt) + '</div>' +
+                (r.prerelease ? '<span class="chip warn">pre-release</span>' : '') +
+              '</div>' +
+              '<div class="rel-main">' +
+                '<div class="small rel-title">' + U.esc(r.name || r.tag || 'Без названия') +
+                  (isInstalled ? '<span class="chip good rel-inst">Установлена</span>' : '') + '</div>' +
+                (r.notes ? '<div class="rel-notes">' + relNotesHtml(r.notes) + '</div>' : '') +
+              '</div>' +
+            '</div>'
+          }).join('') + '</div>'
+        U.$$('[data-link]', modal.body).forEach((el) =>
+          el.addEventListener('click', () => api.openExternal(el.dataset.link)))
+      }).catch((err) => {
+        modal.body.innerHTML = '<div class="tiny dim" style="text-align:center;padding:26px 0">Не удалось загрузить релизы: ' +
+          U.esc(err && err.message ? err.message : String(err)) + '</div>'
+      })
+    }
+
     async function updAction(kind) {
       if (kind === 'check') {
         updState.busy = 'check'
@@ -820,8 +871,8 @@ window.K = window.K || {};
         renderUpdState()
       } else if (kind === 'install') {
         try { await api.update.install() } catch { U.toast('Не удалось запустить установку', 'bad') }
-      } else if (kind === 'page') {
-        api.openExternal('https://github.com/Xerenyn/kriterium/releases/latest')
+      } else if (kind === 'releases') {
+        openReleasesModal()
       }
     }
 

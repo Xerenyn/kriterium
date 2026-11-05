@@ -137,6 +137,11 @@ function createWindow() {
             const text = JSON.stringify(result, null, 2)
             if (process.env.KRIT_SMOKE_OUT) await fs.writeFile(process.env.KRIT_SMOKE_OUT, text, 'utf8')
             console.log('SMOKE_RESULT ' + text)
+            if (process.env.KRIT_SCREENSHOT) {
+              const image = await mainWindow.webContents.capturePage()
+              await fs.writeFile(process.env.KRIT_SCREENSHOT, image.toPNG())
+              console.log('screenshot saved:', process.env.KRIT_SCREENSHOT)
+            }
             app.exit(result && result.ok ? 0 : 1)
             return
           }
@@ -305,6 +310,7 @@ function registerIpc() {
   ipcMain.handle('window:close', () => mainWindow?.close())
 
   ipcMain.handle('update:status', () => updater.buildStatus())
+  ipcMain.handle('update:releases', () => updater.listReleases())
   ipcMain.handle('update:check', () => updater.checkForUpdate(true))
   ipcMain.handle('update:download', () => updater.downloadUpdate())
   ipcMain.handle('update:install', () => updater.installUpdate())

@@ -87,6 +87,7 @@ contextBridge.exposeInMainWorld('krit', {
 
   update: {
     status: () => invoke('update:status'),
+    releases: () => invoke('update:releases'),
     check: () => invoke('update:check'),
     download: () => invoke('update:download'),
     install: () => invoke('update:install'),

@@ -117,6 +117,20 @@ async function checkForUpdate(force) {
   return buildStatus()
 }
 
+async function listReleases(limit) {
+  const count = Math.min(30, Math.max(1, Number(limit) || 12))
+  const data = await requestJson('https://api.github.com/repos/Xerenyn/kriterium/releases?per_page=' + count)
+  if (!Array.isArray(data)) throw new Error(data?.message || 'GitHub не вернул список релизов')
+  return data.map((release) => ({
+    tag: String(release.tag_name || ''),
+    name: String(release.name || ''),
+    notes: String(release.body || '').trim(),
+    publishedAt: String(release.published_at || ''),
+    prerelease: !!release.prerelease,
+    url: String(release.html_url || RELEASE_PAGE)
+  }))
+}
+
 async function downloadUpdate() {
   if (status.state !== 'available' || !status.assetUrl) {
     throw new Error('Сначала проверьте обновления')
@@ -211,5 +225,6 @@ module.exports = {
   buildStatus,
   checkForUpdate,
   downloadUpdate,
-  installUpdate
+  installUpdate,
+  listReleases
 }
