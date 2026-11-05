@@ -18,7 +18,8 @@ window.K = window.K || {};
     dirty: false,
     saving: false,
     draftKey: '',
-    communityGame: null
+    communityGame: null,
+    steamGenres: []
   }
 
   /* Дата «сегодня» в формате YYYY-MM-DD по локальному времени */
@@ -104,8 +105,7 @@ window.K = window.K || {};
     return String(text || '').toLowerCase().replace(/ё/g, 'е')
   }
 
-  /* Подбирает жанр каталога по описанию жанров Steam; null, если ничего не подошло. */
-  function guessGenreFromSteam(steamGenres) {
+  /* Подбирает жанр каталога по описанию жанров Steam; null, если ничего не подошло. */  function guessGenreFromSteam(steamGenres) {
     for (const desc of Array.isArray(steamGenres) ? steamGenres : []) {
       const text = normGenreText(desc)
       if (!text) continue
@@ -231,6 +231,8 @@ window.K = window.K || {};
     state.game = baseGame
     state.ratings = baseRatings
     state.communityGame = communityGame
+    // Все жанры игры в Steam показываются для сведения, учёт идёт по основному (первому)
+    state.steamGenres = Array.isArray(steamDetails?.genres) ? steamDetails.genres.slice() : []
     state.draftKey = draftKeyFor(sourceGame ? sourceGame.id : effectiveSteamId ? 'steam-' + effectiveSteamId : null)
     state.dirty = false
     state.activeTier = 'main'
@@ -272,6 +274,26 @@ window.K = window.K || {};
     renderShell(view)
   }
 
+  /* Поле жанра: у карточки Steam заблокировано; ниже — все жанры игры, учёт по основному */
+  function renderGenreField(genres, g) {
+    const locked = !!state.communityGame
+    const select =
+      '<select data-field="genre"' + (locked ? ' disabled' : '') + '>' +
+      genres.map((genre) => '<option value="' + U.attr(genre.id) + '"' + (g.genre === genre.id ? ' selected' : '') + '>' + U.esc(genre.name) + '</option>').join('') +
+      '</select>'
+    if (!locked) return select
+    // Подсвечиваем жанр Steam, который соответствует выбранному жанру оценки
+    const list = state.steamGenres || []
+    const aliases = (STEAM_GENRE_ALIASES.find((entry) => entry[0] === g.genre) || [null, []])[1]
+    let mainIndex = list.findIndex((name) => aliases.some((alias) => normGenreText(name).indexOf(alias) !== -1))
+    if (mainIndex < 0) mainIndex = list.length ? 0 : -1
+    const chips = list.map((name, index) =>
+      '<span class="chip' + (index === mainIndex ? ' accent' : '') + '">' + U.esc(name) + (index === mainIndex ? ' · основной' : '') + '</span>').join('')
+    return select +
+      '<div class="tiny dim" style="margin-top:5px">Жанр определён из Steam и заблокирован — оценка учитывается по основному жанру</div>' +
+      (chips ? '<div class="row wrap" style="margin-top:6px;gap:6px">' + chips + '</div>' : '')
+  }
+
   function renderShell(view) {
     const g = state.game
     const catalog = state.catalog
@@ -305,7 +327,7 @@ window.K = window.K || {};
         '</div>' + linkedBanner,
         'span2'
       ) +
-      field('Жанр', '<select data-field="genre">' + genres.map((genre) => '<option value="' + U.attr(genre.id) + '"' + (g.genre === genre.id ? ' selected' : '') + '>' + U.esc(genre.name) + '</option>').join('') + '</select>', 'span2') +
+      field('Жанр', renderGenreField(genres, g), 'span2') +
       field('Год', '<input type="number" data-field="year" min="1950" max="2100" value="' + U.attr(g.year || '') + '" placeholder="2024">') +
       field('Статус', '<select data-field="status">' + statuses.map((s) => '<option value="' + U.attr(s.id) + '"' + (g.status === s.id ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>') +
       field('Часы', '<input type="number" data-field="hours" min="0" step="0.5" value="' + U.attr(g.hours == null ? '' : g.hours) + '" placeholder="0">') +
@@ -904,6 +926,11 @@ window.K = window.K || {};
     U.$$('[data-field]', view).forEach((input) => {
       const key = input.dataset.field
       const handler = () => {
+        if (key === 'genre' && state.communityGame) {
+          // Жанр — свойство карточки Steam, менять его в оценке нельзя
+          input.value = state.game.genre
+          return
+        }
         if (key === 'platforms') {
           state.game.platforms = input.value.split(',').map((s) => s.trim()).filter(Boolean)
         } else if (key === 'favorite') {

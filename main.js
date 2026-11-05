@@ -116,6 +116,14 @@ function createWindow() {
       const waitMs = Math.max(300, Math.min(20000, Number(process.env.KRIT_WAIT_MS) || 2200))
       setTimeout(async () => {
         try {
+          // Тестовый хук: авто-подтверждение сохранённой сессии для скриншотов/смоука
+          if (process.env.KRIT_CONFIRM_SESSION) {
+            await mainWindow.webContents.executeJavaScript(
+              'window.krit.cloud.confirmSession()' +
+              '.then(s => { window.K.app.cloudStatus = s; document.querySelectorAll(".modal-backdrop").forEach(m => m.remove()); window.K.app.render(); return window.K.app.refreshDeveloperRole() })' +
+              '.catch(() => {})')
+              .catch(() => {})
+          }
           if (process.env.KRIT_ROUTE) {
             await mainWindow.webContents.executeJavaScript('location.hash = ' + JSON.stringify(process.env.KRIT_ROUTE))
             await new Promise((resolve) => setTimeout(resolve, waitMs))
