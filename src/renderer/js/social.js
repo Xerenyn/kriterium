@@ -873,7 +873,7 @@ window.K = window.K || {};
         const holder = document.createElement('div')
         holder.innerHTML = slice.map((game) => steamResultCard(game)).join('')
         while (holder.firstElementChild) fragment.appendChild(holder.firstElementChild)
-        bindCatalogScreenshots(fragment)
+        bindCatalogScreenshots(fragment, new Map(slice.map((game) => [Number(game.steamAppId), game])))
         bindReviewInspectors(fragment, slice)
         grid.appendChild(fragment)
         if (offset < items.length) requestAnimationFrame(mountNext)
@@ -1034,14 +1034,22 @@ window.K = window.K || {};
     })
   }
 
-  function bindCatalogScreenshots(container) {
+  function bindCatalogScreenshots(container, shotsByCard) {
     U.$$('[data-shot-full]', container).forEach((img) => {
       img.addEventListener('click', (e) => {
         e.stopPropagation()
         const card = img.closest('.steam-catalog-card')
+        // На карточке отображаются три скриншота, а в лайтбоксе доступен
+        // весь список — столько же, сколько на странице игры.
+        const game = card && shotsByCard ? shotsByCard.get(Number(card.dataset.steamCard)) : null
+        const allShots = Array.isArray(game?.screenshots) ? game.screenshots
+          .map((s) => ({ thumb: safeSteamImage(s.thumb), full: safeSteamImage(s.full || s.thumb) }))
+          .filter((s) => s.full) : []
         const siblings = card ? U.$$('[data-shot-full]', card) : [img]
-        const shots = siblings.map((el) => ({ thumb: el.src, full: el.dataset.shotFull || el.src }))
-        const startIdx = Math.max(0, siblings.indexOf(img))
+        const shots = allShots.length
+          ? allShots
+          : siblings.map((el) => ({ thumb: el.src, full: el.dataset.shotFull || el.src }))
+        const startIdx = Math.max(0, Math.min(shots.length - 1, siblings.indexOf(img)))
         const title = (img.dataset.shotTitle || 'Скриншот').replace(/\s*—\s*скриншот\s*\d+$/i, '')
         openScreenshotLightbox(shots, startIdx, title)
       })

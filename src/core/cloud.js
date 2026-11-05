@@ -1056,9 +1056,11 @@ async function hydrateSteamBrowseItems(items) {
       item.steamRecommendationCount = revCount
     }
     if (!item.screenshots.length && entry.screenshots) {
+      // Скриншотов столько же, сколько на странице игры (16) — карточка показывает три,
+      // лайтбокс листает весь список.
       const rawShots = (Array.isArray(entry.screenshots.all_ages_screenshots) ? entry.screenshots.all_ages_screenshots : [])
         .concat(Array.isArray(entry.screenshots.mature_content_screenshots) ? entry.screenshots.mature_content_screenshots : [])
-        .slice(0, 3)
+        .slice(0, 16)
       item.screenshots = rawShots
         .map((s, idx) => {
           const fn = String(s?.filename || '').trim()

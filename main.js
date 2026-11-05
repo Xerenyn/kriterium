@@ -17,7 +17,10 @@ app.setName('kriterium')
 app.setAppUserModelId('ru.kriterium.app')
 nativeTheme.themeSource = 'dark'
 
-const gotLock = app.requestSingleInstanceLock()
+/* Тестовые запуски (смоук/скриншоты с KRIT_*) не должны конфликтовать
+   с уже открытым приложением пользователя */
+const isTestRun = !!(process.env.KRIT_SMOKE || process.env.KRIT_SCREENSHOT || process.env.KRIT_ROUTE)
+const gotLock = isTestRun || app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
