@@ -58,6 +58,35 @@ function normalizeRegion(cc) {
   return VALID_REGIONS.includes(v) ? v : 'ru'
 }
 
+/* Поиск с учётом транслита и неверной раскладки: «дота» и «вщеф» находят «Dota» */
+const CYR_TO_LAT = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+  к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+  х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+}
+/* Русская буква -> клавиша QWERTY, которой она набирается (случай «набрал в другой раскладке») */
+const RU_TO_EN_KEYS = {
+  ф: 'a', и: 'b', с: 'c', в: 'd', у: 'e', а: 'f', п: 'g', р: 'h', ш: 'i', о: 'j', л: 'k',
+  д: 'l', ь: 'm', т: 'n', щ: 'o', з: 'p', й: 'q', к: 'r', ы: 's', е: 't', г: 'u', м: 'v',
+  ц: 'w', ч: 'x', н: 'y', х: 'z', ё: '\`', ж: ';', э: "'", б: ',', ю: '.', х: '[', ъ: ']'
+}
+function charMap(map, text) {
+  let out = ''
+  for (const ch of String(text || '')) out += map[ch] || ch
+  return out
+}
+function searchVariants(term) {
+  const base = String(term || '').trim()
+  if (!base) return []
+  const lower = base.toLowerCase()
+  const out = [base]
+  const translit = charMap(CYR_TO_LAT, lower)
+  if (translit !== lower) out.push(translit)
+  const swapped = charMap(RU_TO_EN_KEYS, lower)
+  if (swapped !== lower) out.push(swapped)
+  return out
+}
+
 function createCloud(configPath, safeStorage, options = {}) {
   const defaultUrl = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_URL
   const defaultAnonKey = options.disableDefaultConfig ? '' : DEFAULT_SUPABASE_ANON_KEY
@@ -68,6 +97,8 @@ function createCloud(configPath, safeStorage, options = {}) {
   let sessionActive = false
   const steamDetailsCache = new Map()
   const featuredCacheByRegion = new Map()
+  /* Выбранный вариант запроса (обычный/транслит/раскладка) для скролла постранично */
+  const browseVariants = new Map()
   const CURATED_GAMES = [
     { steamAppId: 1086940, title: "Baldur's Gate 3" },
     { steamAppId: 1245620, title: 'ELDEN RING' },
@@ -401,30 +432,34 @@ function createCloud(configPath, safeStorage, options = {}) {
     async searchSteam(term, ccOverride) {
       await load()
       const targetCc = normalizeRegion(ccOverride || config.steamRegion)
-      const query = String(term || '').trim().slice(0, 100)
-      if (query.length < 2) return []
-      const [regionalRes, fallbackRes] = await Promise.all([
-        fetchJson('https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: targetCc })).catch(() => ({ items: [] })),
-        targetCc === 'kz'
-          ? Promise.resolve({ items: [] })
-          : fetchJson('https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: 'kz' })).catch(() => ({ items: [] }))
-      ])
-      const regionalIds = new Set((Array.isArray(regionalRes.items) ? regionalRes.items : []).map((it) => Number(it.id)))
-      const mergedRaw = (Array.isArray(regionalRes.items) ? regionalRes.items : []).concat(
-        (Array.isArray(fallbackRes.items) ? fallbackRes.items : []).filter((it) => !regionalIds.has(Number(it.id))).map((it) => Object.assign({}, it, { _unavailableInRegion: true }))
-      )
-      const baseItems = mergedRaw.slice(0, 16).map((item) => ({
-        steamAppId: Number(item.id),
-        title: String(item.name || ''),
-        image: String(item.tiny_image || ''),
-        headerImage: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + Number(item.id) + '/header.jpg',
-        price: item._unavailableInRegion ? null : (item.price?.final ? item.price.final / 100 : null),
-        priceText: '',
-        regionAvailable: !item._unavailableInRegion,
-        currency: item.price?.currency || '',
-        storeUrl: 'https://store.steampowered.com/app/' + Number(item.id) + '/'
-      })).filter((item) => Number.isSafeInteger(item.steamAppId) && item.steamAppId > 0)
-      return await this.enrichSteamList(baseItems, targetCc)
+      // Сначала обычный запрос; если пусто — транслит («дота») и другая раскладка («вщеф»)
+      for (const query of searchVariants(term)) {
+        if (query.length < 2) continue
+        const [regionalRes, fallbackRes] = await Promise.all([
+          fetchJson('https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: targetCc })).catch(() => ({ items: [] })),
+          targetCc === 'kz'
+            ? Promise.resolve({ items: [] })
+            : fetchJson('https://store.steampowered.com/api/storesearch/?' + new URLSearchParams({ term: query, l: 'russian', cc: 'kz' })).catch(() => ({ items: [] }))
+        ])
+        const regionalIds = new Set((Array.isArray(regionalRes.items) ? regionalRes.items : []).map((it) => Number(it.id)))
+        const mergedRaw = (Array.isArray(regionalRes.items) ? regionalRes.items : []).concat(
+          (Array.isArray(fallbackRes.items) ? fallbackRes.items : []).filter((it) => !regionalIds.has(Number(it.id))).map((it) => Object.assign({}, it, { _unavailableInRegion: true }))
+        )
+        const baseItems = mergedRaw.slice(0, 16).map((item) => ({
+          steamAppId: Number(item.id),
+          title: String(item.name || ''),
+          image: String(item.tiny_image || ''),
+          headerImage: 'https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/' + Number(item.id) + '/header.jpg',
+          price: item._unavailableInRegion ? null : (item.price?.final ? item.price.final / 100 : null),
+          priceText: '',
+          regionAvailable: !item._unavailableInRegion,
+          currency: item.price?.currency || '',
+          storeUrl: 'https://store.steampowered.com/app/' + Number(item.id) + '/'
+        })).filter((item) => Number.isSafeInteger(item.steamAppId) && item.steamAppId > 0)
+        if (!baseItems.length) continue
+        return await this.enrichSteamList(baseItems, targetCc)
+      }
+      return []
     },
 
     async steamBrowse(input = {}) {
@@ -432,7 +467,7 @@ function createCloud(configPath, safeStorage, options = {}) {
       const cc = normalizeRegion(input.cc || config.steamRegion)
       const start = Math.max(0, Math.floor(Number(input.start) || 0))
       const count = Math.min(50, Math.max(25, Math.floor(Number(input.count) || 25)))
-      const query = String(input.query || '').trim().slice(0, 100)
+      const rawQuery = String(input.query || '').trim().slice(0, 100)
       const section = String(input.section || 'featured')
       const filterBySection = {
         featured: 'toprated',
@@ -440,22 +475,44 @@ function createCloud(configPath, safeStorage, options = {}) {
         new_releases: 'newreleases',
         specials: 'specials'
       }
-      const params = new URLSearchParams({
-        query: '',
-        start: String(start),
-        count: String(count),
-        infinite: '1',
-        l: 'russian',
-        cc,
-        category1: '998'
-      })
-      if (query) params.set('term', query)
-      else if (filterBySection[section]) params.set('filter', filterBySection[section])
-
-      const data = await fetchJson('https://store.steampowered.com/search/results/?' + params.toString())
-      const items = parseSteamSearchRows(data.results_html || '', cc)
+      const fetchRows = async (termValue, useFilter) => {
+        const params = new URLSearchParams({
+          query: '',
+          start: String(start),
+          count: String(count),
+          infinite: '1',
+          l: 'russian',
+          cc,
+          category1: '998'
+        })
+        if (termValue) params.set('term', termValue)
+        else if (useFilter) params.set('filter', filterBySection[section])
+        const data = await fetchJson('https://store.steampowered.com/search/results/?' + params.toString())
+        const items = parseSteamSearchRows(data.results_html || '', cc)
+        return { items, total: Math.max(0, Number(data.total_count) || 0) }
+      }
+      // Транслит и неверная раскладка: «дота» / «вщеф» / «dota» находят Dota 2.
+      let result = null
+      if (rawQuery) {
+        const cacheKey = rawQuery.toLowerCase() + ':' + cc
+        let chosen = browseVariants.get(cacheKey)
+        if (!chosen) {
+          chosen = searchVariants(rawQuery)[0]
+          browseVariants.set(cacheKey, chosen)
+          for (const candidate of searchVariants(rawQuery).slice(1)) {
+            try {
+              const probe = await fetchRows(candidate, false)
+              if (probe.items.length) { chosen = candidate; browseVariants.set(cacheKey, chosen); break }
+            } catch { /* следующий вариант */ }
+          }
+        }
+        result = await fetchRows(chosen, false)
+      } else {
+        result = await fetchRows('', !!filterBySection[section])
+      }
+      const items = result.items
       await hydrateSteamBrowseItems(items).catch(() => {})
-      const total = Math.max(0, Number(data.total_count) || 0)
+      const total = result.total
       return {
         items,
         total: total || start + items.length,

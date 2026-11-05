@@ -12,6 +12,39 @@ window.K = window.K || {};
     return String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ESC[ch])
   }
 
+  /* Поиск с учётом транслита и неверной раскладки: «дота» и «вщеф» находят «Dota» */
+  const CYR_TO_LAT = {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y',
+    к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f',
+    х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+  }
+  /* Русская буква -> клавиша QWERTY, которой она набирается (случай «набрал в другой раскладке») */
+  const RU_TO_EN_KEYS = {
+    ф: 'a', и: 'b', с: 'c', в: 'd', у: 'e', а: 'f', п: 'g', р: 'h', ш: 'i', о: 'j', л: 'k',
+    д: 'l', ь: 'm', т: 'n', щ: 'o', з: 'p', й: 'q', к: 'r', ы: 's', е: 't', г: 'u', м: 'v',
+    ц: 'w', ч: 'x', н: 'y', х: 'z', ё: '\`', ж: ';', э: "'", б: ',', ю: '.', х: '[', ъ: ']'
+  }
+  function charMap(map, text) {
+    let out = ''
+    for (const ch of String(text || '')) out += map[ch] || ch
+    return out
+  }
+
+  /* Совпадение текста с запросом: пробует сам запрос, транслит и обратную раскладку */
+  function looseMatch(text, query) {
+    const needle = String(query || '').trim()
+    if (!needle) return true
+    const hayLower = String(text || '').toLowerCase()
+    const hayVariants = new Set([hayLower])
+    const hayTranslit = charMap(CYR_TO_LAT, hayLower)
+    if (hayTranslit !== hayLower) hayVariants.add(hayTranslit)
+    for (const variant of [needle, charMap(CYR_TO_LAT, needle), charMap(RU_TO_EN_KEYS, needle)]) {
+      if (!variant) continue
+      for (const hay of hayVariants) if (hay.includes(variant)) return true
+    }
+    return false
+  }
+
   function attr(value) {
     return esc(value).replace(/`/g, '&#96;')
   }
@@ -205,6 +238,6 @@ window.K = window.K || {};
   window.K.util = {
     $, $$, esc, attr, icon, toast, openModal, confirmDialog,
     formatNumber, formatDate, relativeDate, scoreColor, clamp, debounce,
-    uid, plural, initials, splitLines, multiline
+    uid, plural, initials, splitLines, multiline, looseMatch
   }
 })()

@@ -433,7 +433,8 @@ window.K = window.K || {};
     const query = libraryState.search.trim().toLowerCase()
     let items = app.games.map((g) => ({ game: g, score: app.gameScore(g) }))
 
-    if (query) items = items.filter((i) => i.game.title.toLowerCase().includes(query))
+    // Поиск понимает транслит и другую раскладку: «дота» и «вщеф» находят «Dota»
+    if (query) items = items.filter((i) => U.looseMatch(i.game.title, query))
     if (libraryState.genre) items = items.filter((i) => i.game.genre === libraryState.genre)
     if (libraryState.status) items = items.filter((i) => i.game.status === libraryState.status)
 
