@@ -21,6 +21,17 @@ window.K = window.K || {};
     communityGame: null
   }
 
+  /* Дата «сегодня» в формате YYYY-MM-DD по локальному времени */
+  function todayStr() {
+    const d = new Date()
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+  }
+
+  /* Даты прохождения не могут быть в будущем: значение позже сегодняшнего дня прижимается к сегодня */
+  function clampFutureDate(value) {
+    return !value || value <= todayStr() ? value : todayStr()
+  }
+
   function blankGame() {
     const catalog = window.K.app.catalog(null)
     return {
@@ -244,6 +255,10 @@ window.K = window.K || {};
       }
     }
 
+    /* защита от дат из будущего, попавших в старые данные или черновик */
+    state.game.started = clampFutureDate(state.game.started)
+    state.game.finished = clampFutureDate(state.game.finished)
+
     if (!state.game.genre) {
       const catalog = window.K.app.catalog(null)
       state.game.genre = catalog.genres.length ? catalog.genres[0].id : ''
@@ -295,8 +310,8 @@ window.K = window.K || {};
       field('Статус', '<select data-field="status">' + statuses.map((s) => '<option value="' + U.attr(s.id) + '"' + (g.status === s.id ? ' selected' : '') + '>' + U.esc(s.name) + '</option>').join('') + '</select>') +
       field('Часы', '<input type="number" data-field="hours" min="0" step="0.5" value="' + U.attr(g.hours == null ? '' : g.hours) + '" placeholder="0">') +
       field('Платформы', '<input type="text" data-field="platforms" value="' + U.attr((g.platforms || []).join(', ')) + '" placeholder="PC, PS5">', 'span2') +
-      field('Начал', '<input type="date" data-field="started" value="' + U.attr(g.started || '') + '">') +
-      field('Закончил', '<input type="date" data-field="finished" value="' + U.attr(g.finished || '') + '">') +
+      field('Начал', '<input type="date" data-field="started" max="' + todayStr() + '" value="' + U.attr(clampFutureDate(g.started)) + '">') +
+      field('Закончил', '<input type="date" data-field="finished" max="' + todayStr() + '" value="' + U.attr(clampFutureDate(g.finished)) + '">') +
       '</div>' +
       '<div class="row" style="margin-top:13px"><label class="row" style="gap:7px;cursor:pointer;font-size:12px;color:var(--muted)">' +
       '<input type="checkbox" data-field="favorite"' + (g.favorite ? ' checked' : '') + ' style="accent-color:var(--accent);width:14px;height:14px"> Избранное</label>' +
@@ -897,6 +912,13 @@ window.K = window.K || {};
           state.game[key] = input.value === '' ? null : Number(input.value)
         } else if (key === 'title') {
           state.game.title = input.value
+        } else if (key === 'started' || key === 'finished') {
+          const clamped = clampFutureDate(input.value)
+          if (input.value && clamped !== input.value) {
+            input.value = clamped
+            U.toast('Дата прохождения не может быть позже сегодняшнего дня', 'bad')
+          }
+          state.game[key] = clamped
         } else {
           state.game[key] = input.value
         }
