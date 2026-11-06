@@ -320,7 +320,7 @@ function registerIpc() {
     try {
       const url = new URL(value)
       const host = url.hostname.toLowerCase()
-      const allowed = ['steampowered.com', 'steamcommunity.com', 'metacritic.com', 'opencritic.com', 't.me', 'telegram.me', 'github.com']
+      const allowed = ['steampowered.com', 'steamcommunity.com', 'metacritic.com', 'opencritic.com', 't.me', 'telegram.me', 'github.com', 'donationalerts.com', 'www.donationalerts.com']
       if (url.protocol !== 'https:' || url.username || url.password || !allowed.some((domain) => host === domain || host.endsWith('.' + domain))) return false
       return shell.openExternal(url.href)
     } catch { return false }

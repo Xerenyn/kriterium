@@ -707,13 +707,15 @@ window.K = window.K || {};
 
     html += '<div class="two-col"><div style="display:flex;flex-direction:column;gap:14px">'
 
+    const storedAccent = String(profile.accent || '').toLowerCase()
+    const accentIsCustom = !ACCENTS.some((c) => c.toLowerCase() === storedAccent)
+    const customAccentValue = /^#[0-9a-fA-F]{6}$/.test(profile.accent || '') ? profile.accent : '#d8d3c9'
+
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Оформление</div><div class="card-sub">Акцент применяется ко всему интерфейсу</div></div></div>' +
       '<div class="field"><label>Акцентный цвет</label><div class="swatches" id="st-colors">' +
-      ACCENTS.map((c) => '<button type="button" class="swatch' + (c.toLowerCase() === String(profile.accent).toLowerCase() ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + '"></button>').join('') +
+      ACCENTS.map((c) => '<button type="button" class="swatch' + (c.toLowerCase() === storedAccent ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + '"></button>').join('') +
+      '<label class="swatch custom' + (accentIsCustom ? ' active' : '') + '" title="Свой цвет"><input type="color" id="st-accent-custom" value="' + U.attr(customAccentValue) + '"></label>' +
       '</div></div>' +
-      '<div class="divider"></div>' +
-      '<div class="row"><div class="grow"><div class="small" style="font-weight:600">Подсказки к критериям</div><div class="tiny dim">Короткое описание под каждым критерием</div></div>' +
-      '<button class="switch' + (settings.showHints ? ' on' : '') + '" id="st-hints"></button></div>' +
       '<div class="divider"></div>' +
       '<div class="row"><div class="grow"><div class="small" style="font-weight:600">Шаг оценки</div><div class="tiny dim">Точность ползунка</div></div>' +
       '<select id="st-step" style="width:110px"><option value="0.5"' + (settings.step === 0.5 ? ' selected' : '') + '>0,5</option><option value="1"' + (settings.step === 1 ? ' selected' : '') + '>1</option></select></div>' +
@@ -755,8 +757,8 @@ window.K = window.K || {};
       '<div class="row" style="padding:6px 0"><span class="small muted">Chromium</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.chrome) + '</span></div>' +
       '<div class="divider"></div>' +
       '<div class="row wrap" style="gap:8px;align-items:center">' +
-      '<span class="tiny dim">Телеграм-канал:</span>' +
-      '<button class="btn sm ghost" data-external="https://t.me/Kriteriumapp" title="Открыть канал в браузере">' + U.icon('telegram', 13) + ' t.me/Kriteriumapp</button>' +
+      '<button class="btn sm ghost icon" data-external="https://t.me/Kriteriumapp" title="Телеграм-канал «Критериум»">' + U.icon('telegram', 15) + '</button>' +
+      '<button class="btn sm ghost donate" data-external="https://www.donationalerts.com/r/kriterium" title="Поддержать проект">' + U.icon('heart', 14) + ' Поддержать</button>' +
       '</div>' +
       '<div class="tiny dim" style="line-height:1.65;margin-top:10px">Личные оценки и черновики хранятся локально в SQLite (доступен полный экспорт), каталог игр и региональные цены загружаются из Steam, а публичный профиль, рецензии участников, награды и официальные патчи синхронизируются через общую базу сообщества.</div>' +
       '</div>'
@@ -885,21 +887,32 @@ window.K = window.K || {};
     U.$$('[data-color]', view).forEach((btn) => btn.addEventListener('click', async () => {
       await api.profile.save({ accent: btn.dataset.color })
       app().profile.accent = btn.dataset.color
-      document.documentElement.style.setProperty('--accent', btn.dataset.color)
-      U.$$('[data-color]', view).forEach((b) => b.classList.remove('active'))
+      app().applyAccent(btn.dataset.color)
+      U.$$('[data-color], .swatch.custom', view).forEach((b) => b.classList.remove('active'))
       btn.classList.add('active')
       const mini = U.$('#profile-mini')
       if (mini) mini.style.borderColor = 'color-mix(in srgb, ' + btn.dataset.color + ' 30%, transparent)'
       U.toast('Акцент обновлён', 'good')
     }))
 
-    U.$('#st-hints', view).addEventListener('click', async (e) => {
-      const on = !e.currentTarget.classList.contains('on')
-      e.currentTarget.classList.toggle('on', on)
-      app().settings.showHints = on
-      await api.meta.set('showHints', on)
-      U.toast(on ? 'Подсказки включены' : 'Подсказки скрыты', 'good')
-    })
+    // Свой акцентный цвет: предпросмотр при перетаскивании, сохранение после выбора
+    const customAccent = U.$('#st-accent-custom', view)
+    if (customAccent) {
+      customAccent.addEventListener('input', (e) => {
+        if (/^#[0-9a-fA-F]{6}$/.test(e.target.value)) app().applyAccent(e.target.value)
+      })
+      customAccent.addEventListener('change', async (e) => {
+        const color = e.target.value
+        await api.profile.save({ accent: color })
+        app().profile.accent = color
+        app().applyAccent(color)
+        U.$$('[data-color], .swatch.custom', view).forEach((b) => b.classList.remove('active'))
+        customAccent.closest('.swatch').classList.add('active')
+        const mini = U.$('#profile-mini')
+        if (mini) mini.style.borderColor = 'color-mix(in srgb, ' + color + ' 30%, transparent)'
+        U.toast('Свой акцент сохранён', 'good')
+      })
+    }
 
     U.$('#st-step', view).addEventListener('change', async (e) => {
       const step = Number(e.target.value) === 1 ? 1 : 0.5

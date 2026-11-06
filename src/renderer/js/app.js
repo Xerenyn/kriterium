@@ -146,6 +146,7 @@ window.K = window.K || {};
       else if (route.name === 'settings') window.K.Pages.renderSettings(view)
       else renderOverview(view)
     },
+    applyAccent,
     refreshDeveloperRole
   }
 
@@ -188,9 +189,15 @@ window.K = window.K || {};
   }
 
   function applyAccent(color) {
-    if (/^#[0-9a-fA-F]{6}$/.test(color || '')) {
-      document.documentElement.style.setProperty('--accent', color)
-    }
+    if (!/^#[0-9a-fA-F]{6}$/.test(color || '')) return
+    document.documentElement.style.setProperty('--accent', color)
+    // Производные переменные, чтобы работал и произвольный акцентный цвет
+    const r = parseInt(color.slice(1, 3), 16)
+    const g = parseInt(color.slice(3, 5), 16)
+    const b = parseInt(color.slice(5, 7), 16)
+    document.documentElement.style.setProperty('--accent-soft', 'rgba(' + r + ',' + g + ',' + b + ',0.10)')
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+    document.documentElement.style.setProperty('--accent-contrast', luminance > 0.56 ? '#14130f' : '#f2f0ea')
   }
 
   function renderProfileMini() {
@@ -724,14 +731,13 @@ window.K = window.K || {};
 
   async function boot() {
     try {
-      const [info, base, patches, profile, games, ratings, showHints, step, cloudStatus] = await Promise.all([
+      const [info, base, patches, profile, games, ratings, step, cloudStatus] = await Promise.all([
         api.info(),
         api.catalog(),
         api.patches.list(),
         api.profile.get(),
         api.games.list(),
         api.ratings.all(),
-        api.meta.get('showHints', true),
         api.meta.get('step', 0.5),
         api.cloud.status().catch(() => ({ configured: false, signedIn: false, error: 'Общая база пока недоступна.' }))
       ])
@@ -741,7 +747,7 @@ window.K = window.K || {};
       app.profile = profile
       app.games = games
       app.ratings = ratings
-      app.settings.showHints = showHints !== false
+      app.settings.showHints = true // Подсказки к критериям включены всегда
       app.settings.step = [0.5, 1].includes(Number(step)) ? Number(step) : 0.5
       app.cloudStatus = cloudStatus
       try {

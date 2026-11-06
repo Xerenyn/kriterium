@@ -67,7 +67,8 @@ window.K = window.K || {};
     lock: '<rect x="4" y="9" width="12" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M7 9V7a3 3 0 0 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/>',
     code: '<path d="m7 6-4 4 4 4M13 6l4 4-4 4M11 4l-2 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>',
     globe: '<circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M3.5 10h13M10 3.5c2.2 2.2 2.8 8.5 0 13M10 3.5c-2.2 2.2-2.8 8.5 0 13" fill="none" stroke="currentColor" stroke-width="1.2"/>',
-    telegram: '<path d="M17.4 3.3 3.3 9.1l5.5 2.2 2 5.7 2.7-4.1 4.2 1.8L17.4 3.3Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8.8 11.3 16.6 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'
+    telegram: '<path d="M17.4 3.3 3.3 9.1l5.5 2.2 2 5.7 2.7-4.1 4.2 1.8L17.4 3.3Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M8.8 11.3 16.6 4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>',
+    heart: '<path d="M10 16.6s-6.2-3.8-6.2-8.2A3.4 3.4 0 0 1 10 6.2a3.4 3.4 0 0 1 6.2 2.2c0 4.4-6.2 8.2-6.2 8.2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'
   }
 
   function icon(name, size) {
