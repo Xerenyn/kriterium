@@ -1109,6 +1109,28 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 .swatch.custom input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 .btn.donate { color: #d8a49b; border-color: rgba(184, 130, 122, .30); }
 .btn.donate:hover { color: #e6bcb2; border-color: rgba(184, 130, 122, .5); }
+.btn.fav-active { color: var(--warn); border-color: rgba(191, 174, 125, .4); background: rgba(191, 174, 125, .08); }
+
+/* Звезда избранного на карточке каталога и вкладка «Избранное» */
+.steam-fav-star {
+  position: absolute; top: 8px; right: 8px; z-index: 3;
+  width: 28px; height: 28px; border-radius: 8px;
+  display: grid; place-items: center;
+  border: 1px solid rgba(0, 0, 0, .4);
+  background: rgba(10, 10, 12, .62);
+  color: #8f8b83; font-size: 15px; line-height: 1;
+  cursor: pointer; backdrop-filter: blur(3px);
+  transition: color .15s, background .15s, transform .15s;
+}
+.steam-fav-star:hover { color: var(--warn); background: rgba(10, 10, 12, .8); transform: scale(1.06); }
+.steam-fav-star.active { color: var(--warn); background: rgba(25, 21, 14, .85); border-color: rgba(191, 174, 125, .45); }
+.steam-fav-star:active { transform: scale(.94); }
+.tab-fav { position: relative; padding-left: 12px; }
+.tab-fav .fav-dot {
+  position: absolute; top: 4px; right: 4px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--warn); opacity: .8;
+}
 
 .genre-table { width: 100%; border-collapse: collapse; }
 .genre-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); padding: 0 8px 8px; border-bottom: 1px solid var(--line-soft); }

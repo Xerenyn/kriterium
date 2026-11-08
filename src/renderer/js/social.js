@@ -19,6 +19,46 @@ window.K = window.K || {};
   let catalogPendingReset = false
   let catalogAutoSkips = 0
   const CATALOG_PAGE_SIZE = 25
+
+  /* ---------- Избранное в каталоге (локально, мгновенно, без сети) ---------- */
+
+  const FAV_STORE_KEY = 'kriterium.favorites'
+  const CATALOG_CACHE_TTL = 10 * 60 * 1000
+
+  function loadFavoritesStore() {
+    try { return JSON.parse(localStorage.getItem(FAV_STORE_KEY) || '{}') } catch { return {} }
+  }
+
+  function persistFavoritesStore() {
+    try { localStorage.setItem(FAV_STORE_KEY, JSON.stringify(favoritesStore)) } catch { /* ignore */ }
+  }
+
+  let favoritesStore = loadFavoritesStore()
+  let catalogFavoritesMode = false
+  let catalogCache = {} // 'section|search|region' -> { ts, items, start, total, hasMore }
+
+  function toggleFavorite(appId, gameItem) {
+    const id = Number(appId)
+    if (!id) return false
+    if (favoritesStore[id]) {
+      delete favoritesStore[id]
+      persistFavoritesStore()
+      return false
+    }
+    favoritesStore[id] = {
+      steamAppId: id,
+      title: gameItem?.title || 'Steam #' + id,
+      headerImage: gameItem?.headerImage || gameItem?.image || '',
+      genres: Array.isArray(gameItem?.genres) ? gameItem.genres.slice(0, 4) : [],
+      savedAt: Date.now()
+    }
+    persistFavoritesStore()
+    return true
+  }
+
+  function favoriteCount() {
+    return Object.keys(favoritesStore).length
+  }
   let profileSearch = ''
   let accountMode = 'signin'
   let searchTimer = null
@@ -704,8 +744,11 @@ window.K = window.K || {};
       '<div class="row wrap" style="gap:8px;margin-bottom:12px">' +
       '<div class="tabs" id="steam-sections">' +
       sections.map(([id, label]) =>
-        '<button class="tab' + (!catalogSearch && catalogSection === id ? ' active' : '') + '" data-section="' + id + '">' + U.esc(label) + '</button>'
-      ).join('') + '</div>' +
+        '<button class="tab' + (!catalogSearch && !catalogFavoritesMode && catalogSection === id ? ' active' : '') + '" data-section="' + id + '">' + U.esc(label) + '</button>'
+      ).join('') +
+      '<button class="tab tab-fav' + (catalogFavoritesMode ? ' active' : '') + '" id="steam-fav-tab" title="Только избранные игры — открываются мгновенно">' +
+      (favoriteCount() ? '<i class="fav-dot"></i>' : '') + '★ Избранное</button>' +
+      '</div>' +
       '<div class="row wrap" id="steam-quick-tags" style="gap:5px">' +
       QUICK_GENRES.map(([q, label]) =>
         '<button class="chip' + (catalogSearch.toLowerCase() === q.toLowerCase() ? ' accent' : '') + '" style="cursor:pointer" data-quick-tag="' + U.attr(q) + '">' + U.esc(label) + '</button>'
@@ -718,11 +761,13 @@ window.K = window.K || {};
     const input = U.$('#steam-search', view)
     const runSearch = async () => {
       catalogSearch = input.value.trim()
+      catalogFavoritesMode = false
       renderCatalog(view)
     }
     U.$('#steam-search-button', view).addEventListener('click', runSearch)
     U.$('#steam-clear-button', view)?.addEventListener('click', () => {
       catalogSearch = ''
+      catalogFavoritesMode = false
       renderCatalog(view)
     })
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter') runSearch() })
@@ -731,6 +776,7 @@ window.K = window.K || {};
       if (input.value.trim().length >= 3) {
         searchTimer = setTimeout(() => {
           catalogSearch = input.value.trim()
+          catalogFavoritesMode = false
           loadCatalogResults(view)
         }, 550)
       }
@@ -738,10 +784,16 @@ window.K = window.K || {};
     U.$$('[data-section]', view).forEach((btn) => btn.addEventListener('click', () => {
       catalogSection = btn.dataset.section
       catalogSearch = ''
+      catalogFavoritesMode = false
       renderCatalog(view)
     }))
+    U.$('#steam-fav-tab', view)?.addEventListener('click', () => {
+      catalogFavoritesMode = true
+      renderCatalog(view)
+    })
     U.$$('[data-quick-tag]', view).forEach((btn) => btn.addEventListener('click', () => {
       catalogSearch = btn.dataset.quickTag
+      catalogFavoritesMode = false
       renderCatalog(view)
     }))
     U.$('#steam-region', view)?.addEventListener('change', async (event) => {
@@ -750,6 +802,10 @@ window.K = window.K || {};
       loadCatalogResults(view, { reset: true })
     })
 
+    if (catalogFavoritesMode) {
+      renderFavoritesGrid(view)
+      return
+    }
     api.cloud.getSteamRegion().then((region) => {
       if (!view.isConnected) return
       if (region && region !== catalogRegion) {
@@ -789,6 +845,27 @@ window.K = window.K || {};
     const requestRegion = catalogRegion
     const requestSearch = catalogSearch
     const requestSection = catalogSection
+
+    /* Мгновенный показ второй и последующих страниц: та же подборка, что уже
+       загружалась — отрисовываем из кэша, сеть не трогаем (обновится по TTL) */
+    const cacheKey = requestSection + '|' + requestSearch + '|' + requestRegion
+    if (reset && catalogStart === 0) {
+      const cached = catalogCache[cacheKey]
+      if (cached && Date.now() - cached.ts < CATALOG_CACHE_TTL && Array.isArray(cached.items) && cached.items.length) {
+        catalogGames = cached.items.slice()
+        catalogStart = cached.start
+        catalogTotal = cached.total
+        catalogHasMore = cached.hasMore
+        if (count) count.textContent = catalogGames.length + ' из ' + catalogTotal + ' · ' + regionLabel(requestRegion)
+        target.innerHTML = '<div class="steam-catalog-grid" id="steam-grid"></div>'
+        const grid = U.$('#steam-grid', target)
+        if (grid) await appendCatalogCardsChunked(grid, cached.items, token)
+        if (token !== catalogToken) return
+        updateCatalogMore(view)
+        return
+      }
+    }
+
     catalogLoading = true
     if (more && !reset) more.innerHTML = '<div class="card pad small muted">Загружаем ещё игры…</div>'
     try {
@@ -828,6 +905,18 @@ window.K = window.K || {};
       catalogTotal = Math.max(Number(page?.total) || 0, catalogStart)
       catalogHasMore = !!page?.hasMore && rawItems.length > 0 && items.length > 0
       if (count) count.textContent = catalogGames.length + ' из ' + catalogTotal + ' · ' + regionLabel(requestRegion)
+
+      // Первый экран каждой подборки кладём в кэш — повторное открытие каталога
+      // мгновенно показывает его без обращения к Steam
+      if (isFirstPage && items.length) {
+        catalogCache[cacheKey] = {
+          ts: Date.now(),
+          items: catalogGames.slice(),
+          start: catalogStart,
+          total: catalogTotal,
+          hasMore: catalogHasMore
+        }
+      }
 
       if (isFirstPage) {
         target.innerHTML = items.length
@@ -874,6 +963,7 @@ window.K = window.K || {};
         holder.innerHTML = slice.map((game) => steamResultCard(game)).join('')
         while (holder.firstElementChild) fragment.appendChild(holder.firstElementChild)
         bindCatalogScreenshots(fragment, new Map(slice.map((game) => [Number(game.steamAppId), game])))
+        bindCatalogFavorites(fragment)
         bindReviewInspectors(fragment, slice)
         grid.appendChild(fragment)
         if (offset < items.length) requestAnimationFrame(mountNext)
@@ -931,6 +1021,8 @@ window.K = window.K || {};
 
     return '<article class="card steam-catalog-card" data-steam-card="' + game.steamAppId + '" data-route="#/steam/' + game.steamAppId + '" style="cursor:pointer">' +
       '<div class="steam-card-media">' +
+        '<button type="button" class="steam-fav-star' + (favoritesStore[game.steamAppId] ? ' active' : '') + '" data-fav-star="' + game.steamAppId +
+          '" title="' + (favoritesStore[game.steamAppId] ? 'Убрать из избранного' : 'В избранное') + '" aria-label="В избранное">★</button>' +
         (image ? '<img src="' + U.attr(image) + '" alt="" loading="lazy" decoding="async" class="steam-card-cover">' : '<div class="steam-placeholder">STEAM</div>') +
         '<div class="steam-card-badges">' +
           (comm?.count > 0 ? '<span class="ach-pill" title="Средняя оценка участников Критериума">★ Критериум ' + U.formatNumber(comm.average) + ' (' + comm.count + ')</span>' : '') +
@@ -1056,6 +1148,38 @@ window.K = window.K || {};
     })
   }
 
+  function bindCatalogFavorites(container) {
+    U.$$('[data-fav-star]', container).forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const id = Number(btn.dataset.favStar)
+        const gameItem = catalogGames.find((g) => Number(g.steamAppId) === id) || null
+        const active = toggleFavorite(id, gameItem)
+        btn.classList.toggle('active', active)
+        btn.title = active ? 'Убрать из избранного' : 'В избранное'
+        U.toast(active ? '«' + (gameItem?.title || 'Игра') + '» в избранном' : 'Убрано из избранного', active ? 'good' : 'ok')
+      })
+    })
+  }
+
+  /* Сетка избранных игр — только из локального хранилища, сеть не трогаем */
+  function renderFavoritesGrid(view) {
+    const target = U.$('#steam-results', view)
+    const count = U.$('#steam-result-count', view)
+    const more = U.$('#steam-more', view)
+    if (more) more.innerHTML = ''
+    const games = Object.values(favoritesStore).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))
+    if (count) count.textContent = games.length + ' ' + U.plural(games.length, 'игра', 'игры', 'игр') + ' в избранном'
+    if (!target) return
+    if (!games.length) {
+      target.innerHTML = '<div class="empty"><h3>В избранном пока пусто</h3><p>Нажмите звёздочку в углу карточки игры — она сохранится здесь и будет открываться мгновенно, без загрузки из Steam.</p></div>'
+      return
+    }
+    target.innerHTML = '<div class="steam-catalog-grid" id="steam-grid"></div>'
+    const grid = U.$('#steam-grid', target)
+    if (grid) appendCatalogCardsChunked(grid, games, catalogToken)
+  }
+
   function safeSteamImage(value) {
     try {
       const url = new URL(String(value || ''))
@@ -1120,6 +1244,8 @@ window.K = window.K || {};
       (status.signedIn
         ? '<button class="btn primary sm" data-route="#/review/' + steam.steamAppId + '">' + U.icon('plus', 14) + ' Оценить эту игру</button>'
         : '<button class="btn primary sm" data-route="#/account">Войдите, чтобы оставить оценку</button>') +
+      '<button class="btn ghost sm' + (favoritesStore[steam.steamAppId] ? ' fav-active' : '') + '" id="steam-fav-toggle">' +
+      (favoritesStore[steam.steamAppId] ? '★ В избранном' : '☆ В избранное') + '</button>' +
       '<button class="btn ghost sm" id="open-steam">Открыть в Steam</button></div>'
 
     html += '<div class="card steam-hero">' + (heroImage ? '<img src="' + U.attr(heroImage) + '"' + (heroFallback ? ' data-fallback-src="' + U.attr(heroFallback) + '"' : '') + ' alt="" class="steam-hero-image">' : '') +
@@ -1367,6 +1493,13 @@ window.K = window.K || {};
 
   function bindSteamGame(view, steam, steamReviews, status, shared) {
     U.$('#open-steam', view)?.addEventListener('click', () => api.openExternal(steam.storeUrl))
+    U.$('#steam-fav-toggle', view)?.addEventListener('click', (e) => {
+      const btn = e.currentTarget
+      const active = toggleFavorite(steam.steamAppId, steam)
+      btn.classList.toggle('fav-active', active)
+      btn.textContent = active ? '★ В избранном' : '☆ В избранное'
+      U.toast(active ? '«' + (steam.title || 'Игра') + '» в избранном' : 'Убрано из избранного', active ? 'good' : 'ok')
+    })
     // Если у игры нет библиотечного баннера (404), возвращаемся к обычной обложке
     const heroImg = U.$('.steam-hero-image', view)
     if (heroImg && heroImg.dataset.fallbackSrc) {
