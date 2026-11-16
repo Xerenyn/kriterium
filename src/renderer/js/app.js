@@ -683,11 +683,11 @@ window.K = window.K || {};
   function showSessionConfirm() {
     const st = app.cloudStatus || {}
     if (!st.configured || !st.restorableSession) return
-    const email = st.restorableEmail || ''
+    const account = st.restorableAccount || ''
     U.openModal({
       title: 'Вход в аккаунт',
       width: 470,
-      body: '<p class="muted" style="font-size:12.5px;line-height:1.65">В прошлый раз в приложении был аккаунт <b style="color:var(--fg)">' + U.esc(email || 'без почты') + '</b>.<br>Продолжить на нём в этом сеансе?</p>',
+      body: '<p class="muted" style="font-size:12.5px;line-height:1.65">В прошлый раз в приложении был аккаунт <b style="color:var(--fg)">' + U.esc(account || 'без почты') + '</b>.<br>Продолжить на нём в этом сеансе?</p>',
       footer:
         '<button class="btn ghost" data-guest>Остаться гостем</button>' +
         '<button class="btn ghost" data-switch>Другой аккаунт</button>' +
@@ -706,7 +706,7 @@ window.K = window.K || {};
             const status = await api.cloud.confirmSession()
             close()
             await apply(status)
-            if (status.signedIn) U.toast('Вы вошли как ' + (app.profile.nickname || status.user?.email || 'участник'), 'good')
+            if (status.signedIn) U.toast('Вы вошли как ' + (app.profile.nickname || status.user?.label || 'участник'), 'good')
           } catch (err) {
             U.toast(err.message || 'Не удалось подтвердить вход', 'bad')
             btn.disabled = false

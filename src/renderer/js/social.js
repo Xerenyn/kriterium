@@ -61,6 +61,15 @@ window.K = window.K || {};
   }
   let profileSearch = ''
   let accountMode = 'signin'
+  let availableProviders = {}
+  let telegramPrompt = null
+  const SIGN_IN_PROVIDERS = [
+    ['steam', 'Steam'],
+    ['discord', 'Discord'],
+    ['google', 'Google'],
+    ['telegram', 'Telegram'],
+    ['shikimori', 'Shikimori']
+  ]
   let searchTimer = null
   let devReviewsFilter = 'all'
   let devReviewsSearch = ''
@@ -164,7 +173,150 @@ window.K = window.K || {};
     if (!target.isConnected || !isProfileOrAccountRoute()) return
     if (!status.configured) return renderCloudSetup(target, status, rootView)
     if (status.signedIn) return renderSignedIn(target, status, rootView)
+    availableProviders = await api.cloud.authProviders().catch(() => ({}))
+    if (!target.isConnected || !isProfileOrAccountRoute()) return
     return renderAuthForm(target, status, rootView)
+  }
+
+  /* ---------- вход и привязка через сервисы ---------- */
+
+  api.cloud.onAuthPrompt((prompt) => {
+    if (prompt?.provider !== 'telegram') return
+    telegramPrompt?.close()
+    telegramPrompt = U.openModal({
+      title: 'Вход через Telegram',
+      width: 440,
+      body: '<p class="muted" style="font-size:12.5px;line-height:1.6">В Telegram откроется бот Критериума. Нажмите «Запустить», проверьте, что код в сообщении совпадает с этим, и нажмите «Подтвердить».</p>' +
+        '<div class="auth-code">' + U.esc(prompt.code || '') + '</div>',
+      footer: '<button class="btn ghost" data-cancel>Отмена</button>' +
+        '<button class="btn primary" data-open>' + U.brandIcon('telegram', 14) + ' Открыть Telegram</button>',
+      onMount({ root }) {
+        U.$('[data-open]', root).addEventListener('click', () => api.openExternal(prompt.url))
+        U.$('[data-cancel]', root).addEventListener('click', () => api.cloud.cancelAuth())
+      }
+    })
+  })
+
+  /* null — пользователь отменил вход */
+  async function runProviderAuth(provider, mode) {
+    try {
+      const result = mode === 'link' ? await api.cloud.linkProvider(provider) : await api.cloud.signInWith(provider)
+      return result && result.cancelled ? null : result
+    } finally {
+      telegramPrompt?.close()
+      telegramPrompt = null
+    }
+  }
+
+  async function afterSignIn(view, rootView, message) {
+    window.K.app.cloudStatus = await api.cloud.status()
+    syncDeveloperRole(window.K.app.cloudStatus)
+    window.K.app.refreshProfileMini?.()
+    await window.K.app.reloadCloudPatches(false)
+    U.toast(message, 'good')
+    if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
+    else renderAccount(view, rootView)
+  }
+
+  function providerButtonsHtml() {
+    const shown = SIGN_IN_PROVIDERS.filter(([id]) => availableProviders[id])
+    if (!shown.length) return ''
+    return '<div class="auth-providers">' + shown.map(([id, label]) =>
+      '<button type="button" class="btn" data-provider="' + id + '">' + U.brandIcon(id, 15) + '<span>' + label + '</span></button>'
+    ).join('') + '</div>' +
+      '<div class="auth-wait" id="auth-wait" hidden><span class="tiny dim" id="auth-wait-text"></span>' +
+      '<button type="button" class="btn ghost sm" id="auth-cancel">Отмена</button></div>' +
+      '<div class="auth-or">или по почте</div>'
+  }
+
+  function bindProviderButtons(view, rootView) {
+    U.$('#auth-cancel', view)?.addEventListener('click', () => api.cloud.cancelAuth())
+    U.$$('[data-provider]', view).forEach((button) => button.addEventListener('click', async () => {
+      const provider = button.dataset.provider
+      const controls = U.$$('[data-provider], #cloud-submit', view)
+      const wait = U.$('#auth-wait', view)
+      controls.forEach((control) => { control.disabled = true })
+      U.$('#auth-wait-text', view).textContent = provider === 'telegram'
+        ? 'Подтвердите вход в Telegram…'
+        : 'Завершите вход в открывшемся браузере…'
+      wait.hidden = false
+      try {
+        if (await runProviderAuth(provider, 'login')) await afterSignIn(view, rootView, 'Вы вошли')
+      } catch (err) {
+        U.toast(U.errorText(err, 'Не удалось войти'), 'bad')
+      } finally {
+        controls.forEach((control) => { control.disabled = false })
+        wait.hidden = true
+      }
+    }))
+  }
+
+  async function renderLinkedAccounts(card) {
+    if (!card) return
+    const title = (sub) => cardTitle('Привязанные аккаунты', sub)
+    card.innerHTML = title('Входите любым из привязанных способов — аккаунт и оценки одни и те же.') + '<div class="small muted">Загружаем…</div>'
+    const status = await getStatus()
+    if (!card.isConnected) return
+    if (!status.signedIn) {
+      card.innerHTML = title('Steam, Discord, Google, Telegram и Shikimori можно привязать после входа в аккаунт.') +
+        '<button class="btn sm" data-route="#/account">Войти в аккаунт</button>'
+      return
+    }
+    let accounts
+    let providers
+    try {
+      ;[accounts, providers] = await Promise.all([api.cloud.linkedAccounts(), api.cloud.authProviders()])
+    } catch (err) {
+      if (card.isConnected) card.innerHTML = title('') + '<div class="small muted">' + U.esc(U.errorText(err, 'Не удалось загрузить привязки')) + '</div>'
+      return
+    }
+    if (!card.isConnected) return
+
+    const row = (iconHtml, name, linkedName, action, linkedWord = 'Привязан') =>
+      '<div class="link-row"><span class="link-icon">' + iconHtml + '</span><div class="grow"><div class="link-name">' + U.esc(name) + '</div>' +
+      '<div class="tiny link-state' + (linkedName !== null ? ' on' : '') + '">' +
+      (linkedName !== null ? U.esc([linkedWord, linkedName].filter(Boolean).join(' · ')) : 'Не ' + linkedWord.toLowerCase()) + '</div></div>' + action + '</div>'
+    const emailRow = row(U.icon('mail', 15), 'Электронная почта', accounts.email || null,
+      accounts.email ? '<span class="tiny dim">основной способ</span>' : '', 'Привязана')
+    const providerRows = SIGN_IN_PROVIDERS
+      .filter(([id]) => providers[id] || accounts.linked[id])
+      .map(([id, label]) => {
+        const linked = accounts.linked[id]
+        return row(U.brandIcon(id, 15), label, linked ? linked.name : null, linked
+          ? '<button class="btn ghost sm" data-unlink="' + id + '">Отвязать</button>'
+          : '<button class="btn sm" data-link="' + id + '">Привязать</button>')
+      }).join('')
+    card.innerHTML = title('Входите любым из привязанных способов — аккаунт и оценки одни и те же.') +
+      '<div class="link-list">' + emailRow + providerRows + '</div>'
+
+    const providerLabel = (id) => (SIGN_IN_PROVIDERS.find(([key]) => key === id) || [id, id])[1]
+    U.$$('[data-link]', card).forEach((button) => button.addEventListener('click', async () => {
+      const id = button.dataset.link
+      U.$$('[data-link], [data-unlink]', card).forEach((b) => { b.disabled = true })
+      button.textContent = id === 'telegram' ? 'Ждём Telegram…' : 'Ждём браузер…'
+      try {
+        if (await runProviderAuth(id, 'link')) U.toast(providerLabel(id) + ' привязан', 'good')
+      } catch (err) {
+        U.toast(U.errorText(err, 'Не удалось привязать ' + providerLabel(id)), 'bad')
+      }
+      renderLinkedAccounts(card)
+    }))
+    U.$$('[data-unlink]', card).forEach((button) => button.addEventListener('click', async () => {
+      const id = button.dataset.unlink
+      const ok = await U.confirmDialog({
+        title: 'Отвязать ' + providerLabel(id) + '?',
+        text: 'Входить через ' + providerLabel(id) + ' больше не получится, пока вы не привяжете его снова. Оценки и профиль останутся на месте.',
+        confirmLabel: 'Отвязать'
+      })
+      if (!ok) return
+      try {
+        await api.cloud.unlinkProvider(id)
+        U.toast(providerLabel(id) + ' отвязан', 'good')
+      } catch (err) {
+        U.toast(U.errorText(err, 'Не удалось отвязать ' + providerLabel(id)), 'bad')
+      }
+      renderLinkedAccounts(card)
+    }))
   }
 
   function renderCloudSetup(view, status, rootView) {
@@ -217,6 +369,7 @@ window.K = window.K || {};
       cardTitle(registering ? 'Создать аккаунт' : 'Войти в аккаунт', 'Войдите, чтобы публиковать оценки в общем каталоге и открыть свой профиль другим участникам.') +
       '<div class="tabs" style="margin-bottom:16px"><button class="tab' + (!registering ? ' active' : '') + '" data-mode="signin">Войти</button>' +
       '<button class="tab' + (registering ? ' active' : '') + '" data-mode="signup">Регистрация</button></div>' +
+      providerButtonsHtml() +
       '<div class="form-grid">' +
       (registering ? '<div class="field span4"><label>Имя в профиле</label><input id="cloud-display" type="text" maxlength="60" value="' + U.attr(window.K.app.profile?.nickname || '') + '" placeholder="Как вас будут видеть другие"></div>' : '') +
       '<div class="field span4"><label>Электронная почта</label><input id="cloud-email" type="email" maxlength="254" autocomplete="email" placeholder="name@example.com"></div>' +
@@ -230,6 +383,7 @@ window.K = window.K || {};
       accountMode = button.dataset.mode
       renderAuthForm(view, status, rootView)
     }))
+    bindProviderButtons(view, rootView)
     U.$('#cloud-change-project', view).addEventListener('click', async () => {
       await api.cloud.signOut()
       window.K.app.cloudStatus = await api.cloud.status()
@@ -258,13 +412,7 @@ window.K = window.K || {};
         } else {
           await api.cloud.signIn(input)
         }
-        window.K.app.cloudStatus = await api.cloud.status()
-        syncDeveloperRole(window.K.app.cloudStatus)
-        window.K.app.refreshProfileMini?.()
-        await window.K.app.reloadCloudPatches(false)
-        U.toast(registering ? 'Аккаунт создан' : 'Вы вошли', 'good')
-        if (window.K.Pages?.renderProfile && rootView) window.K.Pages.renderProfile(rootView)
-        else renderAccount(view, rootView)
+        await afterSignIn(view, rootView, registering ? 'Аккаунт создан' : 'Вы вошли')
       } catch (err) {
         U.toast(err.message || 'Не удалось выполнить вход', 'bad')
         button.disabled = false
@@ -388,7 +536,7 @@ window.K = window.K || {};
       const heroSub = U.$('#profile-hero-sub', rootView)
       if (heroSub) {
         const handlePart = profile?.handle ? '@' + profile.handle : ''
-        const emailPart = status.user?.email || ''
+        const emailPart = status.user?.label || ''
         const bioPart = profile?.bio || window.K.app.profile?.tagline || ''
         heroSub.textContent = [handlePart, emailPart, bioPart].filter(Boolean).join(' · ') || 'Без описания'
       }
@@ -401,7 +549,7 @@ window.K = window.K || {};
       }
     }
 
-    const html = '<div class="subhead"><h3>Аккаунт и сообщество</h3><div class="line"></div><span class="tiny dim">' + U.esc(status.user?.email || '') + '</span></div>' +
+    const html = '<div class="subhead"><h3>Аккаунт и сообщество</h3><div class="line"></div><span class="tiny dim">' + U.esc(status.user?.label || '') + '</span></div>' +
       (profileError ? '<div class="chip bad" style="margin-bottom:14px">' + U.esc(profileError) + '</div>' : '') +
       '<div class="two-col"><div class="card pad">' + cardTitle('Публичный профиль', 'Синхронизируется с локальным профилем и виден другим участникам, если открыт.') +
       '<div class="form-grid"><div class="field span2"><label>Имя</label><input id="pub-display" type="text" maxlength="60" value="' + U.attr(profile?.display_name || window.K.app.profile?.nickname || '') + '"></div>' +
@@ -1744,6 +1892,7 @@ window.K = window.K || {};
 
   window.K.Social = {
     renderAccount,
+    renderLinkedAccounts,
     openAuth,
     renderCatalog,
     renderSteamGame,

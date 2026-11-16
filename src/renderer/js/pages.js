@@ -721,6 +721,8 @@ window.K = window.K || {};
       '<select id="st-step" style="width:110px"><option value="0.5"' + (settings.step === 0.5 ? ' selected' : '') + '>0,5</option><option value="1"' + (settings.step === 1 ? ' selected' : '') + '>1</option></select></div>' +
       '</div>'
 
+    html += '<div class="card pad" id="linked-accounts"></div>'
+
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Локальная база данных</div><div class="card-sub">Личное хранилище оценок и резервные копии на этом компьютере</div></div>' +
       '<span class="chip good">' + U.esc(info.backend === 'sqlite' ? 'SQLite' : info.backend) + '</span></div>' +
       '<div class="tiny dim" style="line-height:1.7;word-break:break-all"><b style="color:var(--muted)">Файл:</b> ' + U.esc(info.dbPath) + '</div>' +
@@ -765,6 +767,7 @@ window.K = window.K || {};
 
     html += '</div></div>'
     view.innerHTML = shell(html)
+    window.K.Social.renderLinkedAccounts(U.$('#linked-accounts', view))
 
     U.$$('[data-external]', view).forEach((btn) => btn.addEventListener('click', () => api.openExternal(btn.dataset.external)))
 
