@@ -404,30 +404,13 @@ function createCloud(configPath, safeStorage, options = {}) {
   async function browserFlow(provider, mode, signal) {
     const state = randomToken(24)
     const loopback = await openLoopback({ state, signal })
-    const redirectTo = 'http://127.0.0.1:' + loopback.port + '/callback?state=' + state
-    let verifier = ''
+    // Google returns an id_token through the browser; only its nonce hash leaves the app,
+    // so the token is useless to anyone who reads it from browser history.
+    const nonce = provider === 'google' ? randomToken(24) : ''
     try {
-      let url
-      if (BUILT_IN_PROVIDERS.includes(provider)) {
-        verifier = randomToken(48)
-        const query = new URLSearchParams({
-          provider,
-          redirect_to: redirectTo,
-          code_challenge: crypto.createHash('sha256').update(verifier).digest('base64url'),
-          code_challenge_method: 's256'
-        })
-        if (mode === 'link') {
-          query.set('skip_http_redirect', 'true')
-          url = (await request('/auth/v1/user/identities/authorize?' + query)).url
-        } else {
-          url = config.url + '/auth/v1/authorize?' + query
-        }
-      } else {
-        url = (await request(BRIDGE_PATH + '/begin', {
-          method: 'POST',
-          body: JSON.stringify({ provider, mode, port: loopback.port, state })
-        })).url
-      }
+      const begin = { provider, mode, port: loopback.port, state }
+      if (nonce) begin.nonce = crypto.createHash('sha256').update(nonce).digest('hex')
+      const { url } = await request(BRIDGE_PATH + '/begin', { method: 'POST', body: JSON.stringify(begin) })
       await openExternal(url)
     } catch (err) {
       loopback.close()
@@ -438,13 +421,13 @@ function createCloud(configPath, safeStorage, options = {}) {
     const params = await loopback.result
     const failure = params.get('error_description') || params.get('error')
     if (failure) throw new Error(failure)
-    if (!verifier) return applyBridgeOutcome(Object.fromEntries(params))
-    const code = params.get('code')
-    if (!code) throw new Error('Провайдер не вернул код входа.')
-    return finishSession(await request('/auth/v1/token?grant_type=pkce', {
+    const idToken = params.get('id_token')
+    if (!idToken) return applyBridgeOutcome(Object.fromEntries(params))
+    const data = await request('/auth/v1/token?grant_type=id_token', {
       method: 'POST',
-      body: JSON.stringify({ auth_code: code, code_verifier: verifier })
-    }, false))
+      body: JSON.stringify({ provider: 'google', id_token: idToken, nonce, link_identity: mode === 'link' })
+    }, mode === 'link' ? undefined : false)
+    return data?.access_token ? finishSession(data) : publicStatus()
   }
 
   async function telegramFlow(mode, signal) {
@@ -584,13 +567,9 @@ function createCloud(configPath, safeStorage, options = {}) {
     async authProviders() {
       await load()
       if (!configured()) return {}
-      const [settings, bridge] = await Promise.all([
-        request('/auth/v1/settings', {}, false).catch(() => null),
-        request(BRIDGE_PATH + '/providers', {}, false).catch(() => null)
-      ])
+      const bridge = await request(BRIDGE_PATH + '/providers', {}, false).catch(() => null)
       const available = {}
-      for (const provider of BUILT_IN_PROVIDERS) available[provider] = !!settings?.external?.[provider]
-      for (const provider of BRIDGE_PROVIDERS) available[provider] = !!bridge?.[provider]
+      for (const provider of [...BUILT_IN_PROVIDERS, ...BRIDGE_PROVIDERS]) available[provider] = !!bridge?.[provider]
       return available
     },
 

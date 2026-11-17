@@ -1,5 +1,5 @@
 -- 0010: Вход и привязка через Steam, Discord, Shikimori и Telegram.
--- Google — встроенный провайдер Supabase Auth и хранится в auth.identities.
+-- Google остаётся встроенным провайдером Supabase Auth (auth.identities): функция только возвращает приложению его id_token.
 -- Для остальных провайдеров вход проводит Edge Function auth-bridge: она проверяет
 -- ответ провайдера и пишет связь «аккаунт провайдера → пользователь» в эту таблицу.
 -- Клиенты могут только читать свои связи; создаёт и удаляет их функция (service role).
@@ -28,7 +28,7 @@ create policy "users read own external identities"
 -- id попытки и свой секрет state, но читает результат исключительно через функцию.
 create table if not exists public.auth_bridge_flows (
   id uuid primary key default gen_random_uuid(),
-  provider text not null check (provider in ('steam', 'discord', 'shikimori', 'telegram')),
+  provider text not null check (provider in ('google', 'steam', 'discord', 'shikimori', 'telegram')),
   mode text not null check (mode in ('login', 'link')),
   link_user_id uuid references auth.users (id) on delete cascade,
   redirect_port integer not null check (redirect_port between 1024 and 65535),

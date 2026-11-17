@@ -2,7 +2,6 @@ project_id = "kriterium"
 
 [auth]
 enable_manual_linking = true
-additional_redirect_urls = ["http://127.0.0.1:47615/**", "http://127.0.0.1:47616/**", "http://127.0.0.1:47617/**"]
 
 # Browser redirects (Steam, Shikimori) and Telegram webhooks carry no Supabase JWT;
 # auth-bridge checks the caller's token itself where an account is required.

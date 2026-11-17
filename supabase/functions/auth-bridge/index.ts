@@ -2,6 +2,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const GOOGLE_CLIENT_ID = Deno.env.get('GOOGLE_CLIENT_ID') ?? ''
+const GOOGLE_CLIENT_SECRET = Deno.env.get('GOOGLE_CLIENT_SECRET') ?? ''
 const DISCORD_CLIENT_ID = Deno.env.get('DISCORD_CLIENT_ID') ?? ''
 const DISCORD_CLIENT_SECRET = Deno.env.get('DISCORD_CLIENT_SECRET') ?? ''
 const SHIKIMORI_CLIENT_ID = Deno.env.get('SHIKIMORI_CLIENT_ID') ?? ''
@@ -20,8 +22,10 @@ const USER_AGENT = 'Kriterium auth bridge'
 // (PUBLIC_BRIDGE_URL) replaces the raw supabase.co function URL.
 const SELF = (Deno.env.get('PUBLIC_BRIDGE_URL') || SUPABASE_URL + '/functions/v1/auth-bridge').replace(/\/+$/, '')
 
-const PROVIDERS = ['steam', 'discord', 'shikimori', 'telegram'] as const
+const PROVIDERS = ['google', 'steam', 'discord', 'shikimori', 'telegram'] as const
 type Provider = typeof PROVIDERS[number]
+// Google accounts stay native Supabase identities: the bridge only hands Google's id_token back to the app.
+const EXTERNAL_PROVIDERS: readonly Provider[] = PROVIDERS.filter((p) => p !== 'google')
 type Flow = {
   id: string
   provider: Provider
@@ -32,9 +36,9 @@ type Flow = {
   confirm_code: string | null
   result: Record<string, string> | null
 }
-type Outcome = { token_hash: string } | { linked: Provider } | { error: string }
+type Outcome = { token_hash: string } | { id_token: string } | { linked: Provider } | { error: string }
 
-const PROVIDER_NAMES: Record<Provider, string> = { steam: 'Steam', discord: 'Discord', shikimori: 'Shikimori', telegram: 'Telegram' }
+const PROVIDER_NAMES: Record<Provider, string> = { google: 'Google', steam: 'Steam', discord: 'Discord', shikimori: 'Shikimori', telegram: 'Telegram' }
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
@@ -42,6 +46,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 function configured(provider: Provider): boolean {
   if (provider === 'steam') return true
+  if (provider === 'google') return !!(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET)
   if (provider === 'discord') return !!(DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET)
   if (provider === 'shikimori') return !!(SHIKIMORI_CLIENT_ID && SHIKIMORI_CLIENT_SECRET)
   return !!(TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_USERNAME && TELEGRAM_WEBHOOK_SECRET)
@@ -162,6 +167,8 @@ async function begin(req: Request): Promise<Response> {
   if (!configured(provider)) return json({ error: `Вход через ${PROVIDER_NAMES[provider]} ещё не настроен на сервере.` }, 503)
   if (!Number.isInteger(port) || port < 1024 || port > 65535) return json({ error: 'Некорректный порт возврата.' }, 400)
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(state)) return json({ error: 'Некорректный state.' }, 400)
+  const nonce = String(body.nonce ?? '')
+  if (provider === 'google' && !/^[0-9a-f]{64}$/.test(nonce)) return json({ error: 'Некорректный nonce.' }, 400)
   const linkUserId = mode === 'link' ? await userFromRequest(req) : null
 
   await admin.from('auth_bridge_flows').delete().lt('expires_at', new Date().toISOString())
@@ -193,6 +200,18 @@ async function begin(req: Request): Promise<Response> {
       state: flowId
     })
     return json({ url: `${SHIKIMORI_ORIGIN}/oauth/authorize?${params}` })
+  }
+  if (provider === 'google') {
+    const params = new URLSearchParams({
+      client_id: GOOGLE_CLIENT_ID,
+      redirect_uri: `${SELF}/callback/google`,
+      response_type: 'code',
+      scope: 'openid email profile',
+      prompt: 'select_account',
+      nonce,
+      state: flowId
+    })
+    return json({ url: `https://accounts.google.com/o/oauth2/v2/auth?${params}` })
   }
   if (provider === 'discord') {
     const params = new URLSearchParams({
@@ -283,6 +302,33 @@ async function shikimoriCallback(url: URL): Promise<Response> {
   if (!meRes.ok || !me?.id) return backToApp(flow, { error: 'Не удалось получить профиль Shikimori.' })
 
   return backToApp(flow, await complete(flow, String(me.id), String(me.nickname ?? '')))
+}
+
+/* ---------- Google (OpenID Connect) ---------- */
+
+async function googleCallback(url: URL): Promise<Response> {
+  const flow = await loadFlow(url.searchParams.get('state') ?? '', 'google')
+  if (!flow) return text('Попытка входа устарела. Вернитесь в Критериум и нажмите «Google» ещё раз.', 410)
+  await dropFlow(flow.id)
+
+  const code = url.searchParams.get('code')
+  if (!code) return backToApp(flow, { error: 'Вход через Google отменён.' })
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
+      code,
+      redirect_uri: `${SELF}/callback/google`
+    }),
+    signal: AbortSignal.timeout(10000)
+  })
+  const token = await tokenRes.json().catch(() => ({}))
+  if (!tokenRes.ok || !token.id_token) return backToApp(flow, { error: 'Google не подтвердил вход.' })
+  return backToApp(flow, { id_token: token.id_token })
 }
 
 /* ---------- Discord (OAuth 2.0) ---------- */
@@ -396,7 +442,7 @@ async function unlink(req: Request): Promise<Response> {
   const userId = await userFromRequest(req)
   const body = await req.json().catch(() => ({}))
   const provider = body.provider as Provider
-  if (!PROVIDERS.includes(provider)) return json({ error: 'Неизвестный сервис.' }, 400)
+  if (!EXTERNAL_PROVIDERS.includes(provider)) return json({ error: 'Неизвестный сервис.' }, 400)
 
   const [{ data: userData, error }, { data: links }] = await Promise.all([
     admin.auth.admin.getUserById(userId),
@@ -425,6 +471,7 @@ Deno.serve(async (req) => {
     if (req.method === 'GET' && route === '/callback/steam') return await steamCallback(url)
     if (req.method === 'GET' && route === '/callback/shikimori') return await shikimoriCallback(url)
     if (req.method === 'GET' && route === '/callback/discord') return await discordCallback(url)
+    if (req.method === 'GET' && route === '/callback/google') return await googleCallback(url)
     if (req.method === 'POST' && route === '/telegram') return await telegramWebhook(req)
     if (req.method === 'POST' && route === '/poll') return await poll(req)
     if (req.method === 'POST' && route === '/unlink') return await unlink(req)
