@@ -426,7 +426,10 @@ function createCloud(configPath, safeStorage, options = {}) {
     const data = await request('/auth/v1/token?grant_type=id_token', {
       method: 'POST',
       body: JSON.stringify({ provider: 'google', id_token: idToken, nonce, link_identity: mode === 'link' })
-    }, mode === 'link' ? undefined : false)
+    }, mode === 'link' ? undefined : false).catch((err) => {
+      if (/already linked/i.test(err.message)) throw new Error('Этот аккаунт Google уже привязан к другому профилю Критериума.')
+      throw err
+    })
     return data?.access_token ? finishSession(data) : publicStatus()
   }
 
