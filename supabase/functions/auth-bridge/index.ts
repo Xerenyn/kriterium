@@ -196,7 +196,8 @@ async function begin(req: Request): Promise<Response> {
       client_id: SHIKIMORI_CLIENT_ID,
       redirect_uri: `${SELF}/callback/shikimori`,
       response_type: 'code',
-      scope: '',
+      // An empty scope makes Shikimori ask for its three default scopes; user_rates is the narrowest one it accepts.
+      scope: 'user_rates',
       state: flowId
     })
     return json({ url: `${SHIKIMORI_ORIGIN}/oauth/authorize?${params}` })
