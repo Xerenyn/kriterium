@@ -113,13 +113,15 @@
 1. **Authentication → URL Configuration → Redirect URLs:** добавьте `http://127.0.0.1:47615/**`, `http://127.0.0.1:47616/**`, `http://127.0.0.1:47617/**`.
 2. **Authentication → Sign In / Providers:** включите *Allow manual linking* (привязка в настройках).
 3. **Google** — OAuth-клиент типа *Web application* в Google Cloud Console, Authorized redirect URI `https://<project>.supabase.co/auth/v1/callback`; Client ID и Secret — в Supabase → Providers → Google.
-4. **Discord** — приложение в Discord Developer Portal, Redirect `https://<project>.supabase.co/auth/v1/callback`; Client ID и Secret — в Supabase → Providers → Discord.
-5. **Steam, Shikimori, Telegram** работают через Edge Function `supabase/functions/auth-bridge` (таблицы — в миграции `0010_external_sign_in.sql`):
+4. **Steam, Discord, Shikimori, Telegram** работают через Edge Function `supabase/functions/auth-bridge` (таблицы — в миграции `0010_external_sign_in.sql`). Ниже `<bridge>` — её публичный адрес: `https://<project>.supabase.co/functions/v1/auth-bridge` или свой домен (см. ниже).
    - `supabase functions deploy auth-bridge --no-verify-jwt --project-ref <project>` — после этого сразу работает Steam (ключи не нужны);
-   - Shikimori: приложение на <https://shikimori.io/oauth/applications> с Redirect URI `https://<project>.supabase.co/functions/v1/auth-bridge/callback/shikimori`, затем `supabase secrets set SHIKIMORI_CLIENT_ID=… SHIKIMORI_CLIENT_SECRET=…`;
+   - Discord: приложение в Discord Developer Portal, OAuth2 → Redirects `<bridge>/callback/discord`, затем `supabase secrets set DISCORD_CLIENT_ID=… DISCORD_CLIENT_SECRET=…`;
+   - Shikimori: приложение на <https://shikimori.io/oauth/applications> с Redirect URI `<bridge>/callback/shikimori`, затем `supabase secrets set SHIKIMORI_CLIENT_ID=… SHIKIMORI_CLIENT_SECRET=…`;
    - Telegram: бот через @BotFather, затем `supabase secrets set TELEGRAM_BOT_TOKEN=… TELEGRAM_BOT_USERNAME=… TELEGRAM_WEBHOOK_SECRET=<случайная строка>` и регистрация webhook: `https://api.telegram.org/bot<token>/setWebhook?url=https://<project>.supabase.co/functions/v1/auth-bridge/telegram&secret_token=<та же строка>&allowed_updates=["message","callback_query"]`.
 
-У аккаунтов Steam, Shikimori и Telegram нет почты, поэтому функция создаёт им служебный адрес `<сервис>.<id>@users.kriterium.invalid`; письма на него не отправляются, и в приложении он не показывается. Если аккаунт владельца создан через сервис, в `bootstrap-developer.sql` укажите именно его.
+**Свой домен вместо `supabase.co`.** Steam пишет «Войти на <домен>», а Discord и Shikimori показывают адрес возврата, поэтому функцию удобно открыть на своём поддомене: прокси (например, Cloudflare Worker) пересылает `https://<домен>/auth/*` на `https://<project>.supabase.co/functions/v1/auth-bridge/*`, а функции задаётся `supabase secrets set PUBLIC_BRIDGE_URL=https://<домен>/auth`. Адреса возврата в Discord и Shikimori тогда указываются на этом домене. Экран согласия Google показывает домен Supabase, пока у проекта нет Custom Domain.
+
+У аккаунтов Steam, Discord, Shikimori и Telegram нет почты, поэтому функция создаёт им служебный адрес `<сервис>.<id>@users.kriterium.invalid`; письма на него не отправляются, и в приложении он не показывается. Если аккаунт владельца создан через сервис, в `bootstrap-developer.sql` укажите именно его.
 
 Страница игры связывается со Steam по App ID. Steam предоставляет поиск и часть метаданных, включая Metacritic для некоторых игр; оценки Metacritic доступны не для всего каталога. Сводная оценка Критериума считается по публичным оценкам участников. Данные других внешних рейтингов можно добавить отдельным серверным источником; скрейпить сайты без разрешения не следует.
 

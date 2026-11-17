@@ -2,6 +2,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+const DISCORD_CLIENT_ID = Deno.env.get('DISCORD_CLIENT_ID') ?? ''
+const DISCORD_CLIENT_SECRET = Deno.env.get('DISCORD_CLIENT_SECRET') ?? ''
 const SHIKIMORI_CLIENT_ID = Deno.env.get('SHIKIMORI_CLIENT_ID') ?? ''
 const SHIKIMORI_CLIENT_SECRET = Deno.env.get('SHIKIMORI_CLIENT_SECRET') ?? ''
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN') ?? ''
@@ -11,11 +13,15 @@ const TELEGRAM_WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET') ?? ''
 // Must stay equal to SYNTHETIC_EMAIL_DOMAIN in src/core/cloud.js: the app hides these addresses.
 const SYNTHETIC_EMAIL_DOMAIN = 'users.kriterium.invalid'
 const SHIKIMORI_ORIGIN = 'https://shikimori.io'
+const DISCORD_API = 'https://discord.com/api'
 const STEAM_OPENID = 'https://steamcommunity.com/openid/login'
 const USER_AGENT = 'Kriterium auth bridge'
-const SELF = SUPABASE_URL + '/functions/v1/auth-bridge'
+// Address the browser sees on provider pages and in redirects; a proxy on the project's own domain
+// (PUBLIC_BRIDGE_URL) replaces the raw supabase.co function URL.
+const SELF = (Deno.env.get('PUBLIC_BRIDGE_URL') || SUPABASE_URL + '/functions/v1/auth-bridge').replace(/\/+$/, '')
 
-type Provider = 'steam' | 'shikimori' | 'telegram'
+const PROVIDERS = ['steam', 'discord', 'shikimori', 'telegram'] as const
+type Provider = typeof PROVIDERS[number]
 type Flow = {
   id: string
   provider: Provider
@@ -28,7 +34,7 @@ type Flow = {
 }
 type Outcome = { token_hash: string } | { linked: Provider } | { error: string }
 
-const PROVIDER_NAMES: Record<Provider, string> = { steam: 'Steam', shikimori: 'Shikimori', telegram: 'Telegram' }
+const PROVIDER_NAMES: Record<Provider, string> = { steam: 'Steam', discord: 'Discord', shikimori: 'Shikimori', telegram: 'Telegram' }
 
 const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
@@ -36,6 +42,7 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 function configured(provider: Provider): boolean {
   if (provider === 'steam') return true
+  if (provider === 'discord') return !!(DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET)
   if (provider === 'shikimori') return !!(SHIKIMORI_CLIENT_ID && SHIKIMORI_CLIENT_SECRET)
   return !!(TELEGRAM_BOT_TOKEN && TELEGRAM_BOT_USERNAME && TELEGRAM_WEBHOOK_SECRET)
 }
@@ -151,7 +158,7 @@ async function begin(req: Request): Promise<Response> {
   const mode = body.mode === 'link' ? 'link' : 'login'
   const port = Number(body.port)
   const state = String(body.state ?? '')
-  if (!['steam', 'shikimori', 'telegram'].includes(provider)) return json({ error: 'Неизвестный способ входа.' }, 400)
+  if (!PROVIDERS.includes(provider)) return json({ error: 'Неизвестный способ входа.' }, 400)
   if (!configured(provider)) return json({ error: `Вход через ${PROVIDER_NAMES[provider]} ещё не настроен на сервере.` }, 503)
   if (!Number.isInteger(port) || port < 1024 || port > 65535) return json({ error: 'Некорректный порт возврата.' }, 400)
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(state)) return json({ error: 'Некорректный state.' }, 400)
@@ -186,6 +193,17 @@ async function begin(req: Request): Promise<Response> {
       state: flowId
     })
     return json({ url: `${SHIKIMORI_ORIGIN}/oauth/authorize?${params}` })
+  }
+  if (provider === 'discord') {
+    const params = new URLSearchParams({
+      client_id: DISCORD_CLIENT_ID,
+      redirect_uri: `${SELF}/callback/discord`,
+      response_type: 'code',
+      scope: 'identify',
+      prompt: 'none',
+      state: flowId
+    })
+    return json({ url: `https://discord.com/oauth2/authorize?${params}` })
   }
   return json({ url: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${flowKey(flowId)}`, flow: flowId, code })
 }
@@ -267,6 +285,41 @@ async function shikimoriCallback(url: URL): Promise<Response> {
   return backToApp(flow, await complete(flow, String(me.id), String(me.nickname ?? '')))
 }
 
+/* ---------- Discord (OAuth 2.0) ---------- */
+
+async function discordCallback(url: URL): Promise<Response> {
+  const flow = await loadFlow(url.searchParams.get('state') ?? '', 'discord')
+  if (!flow) return text('Попытка входа устарела. Вернитесь в Критериум и нажмите «Discord» ещё раз.', 410)
+  await dropFlow(flow.id)
+
+  const code = url.searchParams.get('code')
+  if (!code) return backToApp(flow, { error: 'Вход через Discord отменён.' })
+
+  const tokenRes = await fetch(`${DISCORD_API}/oauth2/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': USER_AGENT },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: DISCORD_CLIENT_ID,
+      client_secret: DISCORD_CLIENT_SECRET,
+      code,
+      redirect_uri: `${SELF}/callback/discord`
+    }),
+    signal: AbortSignal.timeout(10000)
+  })
+  const token = await tokenRes.json().catch(() => ({}))
+  if (!tokenRes.ok || !token.access_token) return backToApp(flow, { error: 'Discord не подтвердил вход.' })
+
+  const meRes = await fetch(`${DISCORD_API}/users/@me`, {
+    headers: { authorization: `Bearer ${token.access_token}`, 'user-agent': USER_AGENT },
+    signal: AbortSignal.timeout(10000)
+  })
+  const me = await meRes.json().catch(() => null)
+  if (!meRes.ok || !me?.id) return backToApp(flow, { error: 'Не удалось получить профиль Discord.' })
+
+  return backToApp(flow, await complete(flow, String(me.id), String(me.global_name || me.username || '')))
+}
+
 /* ---------- Telegram (bot deep link + confirmation button) ---------- */
 
 async function telegram(method: string, payload: Record<string, unknown>) {
@@ -343,7 +396,7 @@ async function unlink(req: Request): Promise<Response> {
   const userId = await userFromRequest(req)
   const body = await req.json().catch(() => ({}))
   const provider = body.provider as Provider
-  if (!['steam', 'shikimori', 'telegram'].includes(provider)) return json({ error: 'Неизвестный сервис.' }, 400)
+  if (!PROVIDERS.includes(provider)) return json({ error: 'Неизвестный сервис.' }, 400)
 
   const [{ data: userData, error }, { data: links }] = await Promise.all([
     admin.auth.admin.getUserById(userId),
@@ -353,7 +406,7 @@ async function unlink(req: Request): Promise<Response> {
   const user = userData.user
   const identities = user.identities ?? []
   const passwordEmail = identities.some((i) => i.provider === 'email') && !user.email?.endsWith('@' + SYNTHETIC_EMAIL_DOMAIN)
-  const builtIn = identities.filter((i) => i.provider === 'google' || i.provider === 'discord').length
+  const builtIn = identities.filter((i) => i.provider === 'google').length
   const remaining = (passwordEmail ? 1 : 0) + builtIn + (links ?? []).filter((l) => l.provider !== provider).length
   if (remaining < 1) return json({ error: 'Это единственный способ входа. Сначала привяжите другой сервис.' }, 409)
 
@@ -366,11 +419,12 @@ Deno.serve(async (req) => {
   const route = url.pathname.replace(/^.*?\/auth-bridge/, '') || '/'
   try {
     if (req.method === 'GET' && route === '/providers') {
-      return json({ steam: configured('steam'), shikimori: configured('shikimori'), telegram: configured('telegram') })
+      return json(Object.fromEntries(PROVIDERS.map((p) => [p, configured(p)])))
     }
     if (req.method === 'POST' && route === '/begin') return await begin(req)
     if (req.method === 'GET' && route === '/callback/steam') return await steamCallback(url)
     if (req.method === 'GET' && route === '/callback/shikimori') return await shikimoriCallback(url)
+    if (req.method === 'GET' && route === '/callback/discord') return await discordCallback(url)
     if (req.method === 'POST' && route === '/telegram') return await telegramWebhook(req)
     if (req.method === 'POST' && route === '/poll') return await poll(req)
     if (req.method === 'POST' && route === '/unlink') return await unlink(req)

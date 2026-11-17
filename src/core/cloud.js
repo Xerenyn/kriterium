@@ -10,12 +10,12 @@ const APP_USER_AGENT = 'Kriterium/1.0 (Windows desktop app)'
 const DEFAULT_SUPABASE_URL = 'https://fubyxivjqtnmzpwinzge.supabase.co'
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1Ynl4aXZqcXRubXpwd2luemdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NDQ5MTgsImV4cCI6MjEwOTEyMDkxOH0.0_ZMAOqk0mMVIR4g7AnWCSR4oUMwbHPDl0LwdjvdVrE'
 
-// Steam, Shikimori and Telegram accounts get a placeholder address from supabase/functions/auth-bridge;
+// Steam, Discord, Shikimori and Telegram accounts get a placeholder address from supabase/functions/auth-bridge;
 // the domain must stay equal there. Such addresses are never shown to the user.
 const SYNTHETIC_EMAIL_DOMAIN = 'users.kriterium.invalid'
 const BRIDGE_PATH = '/functions/v1/auth-bridge'
-const BUILT_IN_PROVIDERS = ['google', 'discord']
-const BRIDGE_PROVIDERS = ['steam', 'shikimori', 'telegram']
+const BUILT_IN_PROVIDERS = ['google']
+const BRIDGE_PROVIDERS = ['steam', 'discord', 'shikimori', 'telegram']
 const PROVIDER_LABELS = { google: 'Google', discord: 'Discord', steam: 'Steam', shikimori: 'Shikimori', telegram: 'Telegram' }
 const LOOPBACK_PORTS = [47615, 47616, 47617]
 const PROVIDER_FLOW_TIMEOUT_MS = 3 * 60 * 1000
