@@ -703,9 +703,9 @@ window.K = window.K || {};
     const catalog = app().catalog(null)
     const criteriaCount = catalog.categories.reduce((n, c) => n + c.criteria.length, 0)
 
-    let html = pageHead('Приложение', 'Настройки', 'Оформление, данные и информация о приложении.')
+    let html = pageHead('Система · версия ' + U.esc(info.version), 'Настройки приложения', 'Параметры окружения, локальные данные и информация о сборке.')
 
-    html += '<div class="two-col"><div style="display:flex;flex-direction:column;gap:14px">'
+    html += '<div class="settings-page">'
 
     const storedAccent = String(profile.accent || '').toLowerCase()
     const accentIsCustom = !ACCENTS.some((c) => c.toLowerCase() === storedAccent)
@@ -733,7 +733,7 @@ window.K = window.K || {};
       '<span class="spacer"></span><button class="btn danger" data-action="reset">Сбросить</button></div>' +
       '</div>'
 
-    html += '</div><div style="display:flex;flex-direction:column;gap:14px">'
+    html += '</div>'
 
     html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Система оценки</div><div class="card-sub">Текущий набор критериев</div></div></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Критериев</span><span class="spacer"></span><span class="mono">' + criteriaCount + '</span></div>' +
@@ -765,7 +765,7 @@ window.K = window.K || {};
       '<div class="tiny dim" style="line-height:1.65;margin-top:10px">Личные оценки и черновики хранятся локально в SQLite (доступен полный экспорт), каталог игр и региональные цены загружаются из Steam, а публичный профиль, рецензии участников, награды и официальные патчи синхронизируются через общую базу сообщества.</div>' +
       '</div>'
 
-    html += '</div></div>'
+    html += '</div>'
     view.innerHTML = shell(html)
     window.K.Social.renderLinkedAccounts(U.$('#linked-accounts', view))
 

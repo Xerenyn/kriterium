@@ -562,6 +562,23 @@ function createCloud(configPath, safeStorage, options = {}) {
       if (!session) return publicStatus()
       try { await refreshSession() } catch { /* offline: confirmation still applies to the stored session */ }
       if (!session) return publicStatus() // refresh discards an expired session
+      // Серверная проверка: сессия могла остаться от удалённого аккаунта.
+      // GoTrue отвечает 401 «User from sub claim in JWT does not exist» именно в этом случае.
+      if (configured() && session.access_token) {
+        try {
+          const res = await fetch(config.url + '/auth/v1/user', {
+            headers: { apikey: config.anonKey, authorization: 'Bearer ' + session.access_token, 'user-agent': APP_USER_AGENT },
+            signal: AbortSignal.timeout(15000)
+          })
+          if (res.status === 401 || res.status === 403) {
+            session = null
+            sessionActive = false
+            config.encryptedSession = ''
+            await persist()
+            return publicStatus()
+          }
+        } catch { /* офлайн или таймаут — не выкидываем пользователя, проверим при следующем запуске */ }
+      }
       sessionActive = true
       return publicStatus()
     },
