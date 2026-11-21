@@ -169,7 +169,7 @@ p { margin: 0; }
   font-size: 10.5px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
   color: var(--dim); margin-bottom: 7px;
 }
-.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 26px; }
+.page-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 .page-title { font-size: 28px; font-weight: 620; letter-spacing: -0.025em; }
 .page-sub { margin-top: 7px; color: var(--muted); font-size: 13px; max-width: 640px; }
 .head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -273,7 +273,7 @@ select:disabled { opacity: .6; cursor: not-allowed; }
 .formula-legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); }
 .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 6px; }
 
-.two-col { display: grid; grid-template-columns: 1.25fr .75fr; gap: 16px; }
+.two-col { display: grid; grid-template-columns: 1.25fr .75fr; gap: 14px; }
 
 .game-list { display: flex; flex-direction: column; }
 .game-row {
@@ -816,6 +816,7 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
 }
 .picker-list {
   overflow-y: auto;
+  overscroll-behavior: contain;
   max-height: 318px;
   display: flex;
   flex-direction: column;
@@ -923,7 +924,7 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
 .tab.active { background: var(--panel-3); color: var(--text); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 
 /* ---------- editor ---------- */
-.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 314px; gap: 18px; align-items: start; }
+.editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) 314px; gap: 14px; align-items: start; }
 .editor-main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .form-grid .span2 { grid-column: span 2; }
@@ -951,7 +952,15 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
 .tier-tab-bar i { display: block; height: 100%; border-radius: 4px; transition: width .2s; }
 .tier-hint { display: block; font-size: 10.5px; line-height: 1.5; }
 
-.cat-jump { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 2px; }
+.cat-jump {
+  position: sticky; top: -60px; z-index: 30;
+  display: flex; flex-wrap: wrap; gap: 5px;
+  margin: 0; padding: 69px 2px 10px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  border-bottom: 1px solid var(--line-soft);
+}
 .cat-jump button {
   padding: 3px 8px; border: 1px solid var(--line-soft); border-radius: 20px;
   background: rgba(255,255,255,.025); color: var(--dim); font-size: 10.5px;
@@ -959,8 +968,15 @@ input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:foc
 .cat-jump button:hover { color: var(--text); border-color: var(--line); }
 .cat-jump button.done { color: #d6d1c7; border-color: rgba(216, 211, 201, 0.25); }
 
-.cat-block { padding: 0; overflow: hidden; }
-.cat-block + .cat-block { margin-top: 12px; }
+/* Категории в рецензии: две колонки-«кирпичика» на широком экране */
+.cat-columns { column-count: 2; column-gap: 14px; }
+.cat-columns .cat-block { margin-bottom: 0; margin-top: 14px; }
+.cat-columns .cat-block:first-child { margin-top: 0; }
+@media (max-width: 1240px) {
+  .cat-columns { column-count: 1; }
+}
+
+.cat-block { padding: 0; overflow: hidden; margin-bottom: 14px; scroll-margin-top: 64px; }
 .cat-head {
   display: flex; align-items: center; gap: 12px;
   padding: 15px 18px; cursor: pointer; user-select: none;
@@ -1023,7 +1039,7 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 .na-btn:hover { color: var(--text); }
 .na-btn.active { background: rgba(184, 130, 122, 0.14); border-color: rgba(184, 130, 122, 0.4); color: #d3a49b; }
 
-.score-panel { position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px; }
+.score-panel { position: sticky; top: 0; display: flex; flex-direction: column; gap: 14px; }
 .score-card { padding: 20px; text-align: center; }
 .score-card .ring { margin: 2px auto 8px; }
 .grade-name { font-size: 12px; color: var(--muted); }
@@ -1182,7 +1198,7 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 @keyframes pop { from { transform: scale(.97) translateY(6px); opacity: 0; } to { transform: none; opacity: 1; } }
 .modal-head { padding: 18px 22px; border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 14px; }
 .modal-head h3 { font-size: 16px; }
-.modal-body { padding: 20px 22px; overflow-y: auto; }
+.modal-body { padding: 20px 22px; overflow-y: auto; overscroll-behavior: contain; }
 .modal-foot { padding: 14px 22px; border-top: 1px solid var(--line-soft); display: flex; justify-content: flex-end; gap: 8px; }
 
 /* Список релизов (модал в настройках) */

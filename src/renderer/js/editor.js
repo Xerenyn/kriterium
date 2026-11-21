@@ -437,9 +437,9 @@ window.K = window.K || {};
       '<button data-jump="' + U.attr(cat.id) + '">' + (index + 1) + '. ' + U.esc(shortCat(cat.name)) + '</button>'
     ).join('') + '</div>'
 
-    cats.forEach((cat, index) => {
+    const blocks = cats.map((cat, index) => {
       const collapsed = state.collapsed.has(cat.id)
-      html += '<div class="card cat-block" id="cat-' + U.attr(cat.id) + '">' +
+      return '<div class="card cat-block" id="cat-' + U.attr(cat.id) + '">' +
         '<div class="cat-head" data-collapse="' + U.attr(cat.id) + '">' +
         '<div class="cat-index">' + String(index + 1).padStart(2, '0') + '</div>' +
         '<div class="cat-head-main"><div class="cat-name">' + U.esc(cat.name) + '</div>' +
@@ -452,6 +452,7 @@ window.K = window.K || {};
         (collapsed ? '' : '<div class="cat-body">' + cat.criteria.map((crit) => criterionHtml(cat, crit)).join('') + '</div>') +
         '</div>'
     })
+    html += '<div class="cat-columns">' + blocks.join('') + '</div>'
 
     area.innerHTML = html
     bindTierTabs()
