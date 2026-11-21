@@ -561,6 +561,7 @@ window.K = window.K || {};
       '<span class="spacer"></span><button class="btn ghost" id="cloud-signout">Выйти из аккаунта</button></div></div>' +
       '<div style="display:flex;flex-direction:column;gap:14px"><div class="card pad">' + cardTitle('Достижения в профиле', 'Выдаются сервером и видны всем участникам.') +
       badgeCardsHtml(profile, isDeveloper) + '</div>' +
+      '<div class="card pad" id="linked-accounts"></div>' +
       '<div class="card pad">' + cardTitle('Моя роль', 'Права разработчика назначает только владелец проекта Supabase.') +
       (isDeveloper ? '<p class="small muted">У вас есть права управлять общим каталогом, внешними оценками, публичными отзывами и официальными патчами.</p>' : '<p class="small muted">Сейчас у вас права участника: можно оценивать игры и управлять своим профилем. Изменять общие данные и патчи нельзя.</p>' +
         '<button class="btn ghost sm" id="cloud-download-developer-sql" style="margin-top:12px">Скачать SQL для аккаунта разработчика</button>') +
@@ -578,6 +579,7 @@ window.K = window.K || {};
         ).join('') + '</div>' +
         '<div id="dev-reviews-list"><div class="small muted">Загружаем рецензии…</div></div></div>' : '')
     view.innerHTML = html
+    renderLinkedAccounts(U.$('#linked-accounts', view))
     U.$('#cloud-signout', view).addEventListener('click', async () => {
       await api.cloud.signOut()
       window.K.app.cloudStatus = await api.cloud.status()

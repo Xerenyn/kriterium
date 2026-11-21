@@ -136,14 +136,6 @@ window.K = window.K || {};
 
     html += '<div id="profile-account-mount"></div>'
 
-    html += '<div class="subhead"><h3>Резервная копия и данные</h3><div class="line"></div></div>'
-    html += '<div class="card pad"><div class="row wrap" style="gap:8px">' +
-      '<button class="btn" data-action="export-json">' + U.icon('export', 14) + ' Экспорт профиля (.json)</button>' +
-      '<button class="btn" data-action="export-csv">' + U.icon('export', 14) + ' Таблица оценок (.csv)</button>' +
-      '<button class="btn" data-action="import-json">' + U.icon('import', 14) + ' Импорт профиля</button>' +
-      '<span class="spacer"></span><button class="btn danger" data-action="reset">Сбросить всё</button>' +
-      '</div><div class="tiny dim" style="margin-top:10px">Экспорт включает профиль, игры, все оценки и установленные патчи. Импорт объединяет данные по id записей.</div></div>'
-
     view.innerHTML = shell(html)
 
     const accountMount = U.$('#profile-account-mount', view)
@@ -152,10 +144,6 @@ window.K = window.K || {};
     }
 
     U.$('[data-action="edit-profile"]', view).addEventListener('click', openProfileEditor)
-    U.$('[data-action="export-json"]', view).addEventListener('click', exportJson)
-    U.$('[data-action="export-csv"]', view).addEventListener('click', exportCsv)
-    U.$('[data-action="import-json"]', view).addEventListener('click', importJson)
-    U.$('[data-action="reset"]', view).addEventListener('click', resetAll)
   }
 
   function openProfileEditor() {
@@ -703,15 +691,14 @@ window.K = window.K || {};
     const catalog = app().catalog(null)
     const criteriaCount = catalog.categories.reduce((n, c) => n + c.criteria.length, 0)
 
-    let html = pageHead('Система · версия ' + U.esc(info.version), 'Настройки приложения', 'Параметры окружения, локальные данные и информация о сборке.')
-
-    html += '<div class="settings-page">'
+    let html = pageHead('Приложение', 'Настройки', 'Оформление, данные и информация о приложении.')
 
     const storedAccent = String(profile.accent || '').toLowerCase()
     const accentIsCustom = !ACCENTS.some((c) => c.toLowerCase() === storedAccent)
     const customAccentValue = /^#[0-9a-fA-F]{6}$/.test(profile.accent || '') ? profile.accent : '#d8d3c9'
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Оформление</div><div class="card-sub">Акцент применяется ко всему интерфейсу</div></div></div>' +
+    const appearanceCard =
+      '<div class="card pad"><div class="card-head"><div><div class="card-title">Оформление</div><div class="card-sub">Акцент применяется ко всему интерфейсу</div></div></div>' +
       '<div class="field"><label>Акцентный цвет</label><div class="swatches" id="st-colors">' +
       ACCENTS.map((c) => '<button type="button" class="swatch' + (c.toLowerCase() === storedAccent ? ' active' : '') + '" data-color="' + c + '" style="background:' + c + '"></button>').join('') +
       '<label class="swatch custom' + (accentIsCustom ? ' active' : '') + '" title="Свой цвет"><input type="color" id="st-accent-custom" value="' + U.attr(customAccentValue) + '"></label>' +
@@ -721,21 +708,8 @@ window.K = window.K || {};
       '<select id="st-step" style="width:110px"><option value="0.5"' + (settings.step === 0.5 ? ' selected' : '') + '>0,5</option><option value="1"' + (settings.step === 1 ? ' selected' : '') + '>1</option></select></div>' +
       '</div>'
 
-    html += '<div class="card pad" id="linked-accounts"></div>'
-
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Локальная база данных</div><div class="card-sub">Личное хранилище оценок и резервные копии на этом компьютере</div></div>' +
-      '<span class="chip good">' + U.esc(info.backend === 'sqlite' ? 'SQLite' : info.backend) + '</span></div>' +
-      '<div class="tiny dim" style="line-height:1.7;word-break:break-all"><b style="color:var(--muted)">Файл:</b> ' + U.esc(info.dbPath) + '</div>' +
-      '<div class="row wrap" style="gap:8px;margin-top:12px">' +
-      '<button class="btn" data-action="open-folder">Открыть папку</button>' +
-      '<button class="btn" data-action="export-json">' + U.icon('export', 14) + ' Экспорт</button>' +
-      '<button class="btn" data-action="import-json">' + U.icon('import', 14) + ' Импорт</button>' +
-      '<span class="spacer"></span><button class="btn danger" data-action="reset">Сбросить</button></div>' +
-      '</div>'
-
-    html += '</div>'
-
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Система оценки</div><div class="card-sub">Текущий набор критериев</div></div></div>' +
+    const scoringCard =
+      '<div class="card pad"><div class="card-head"><div><div class="card-title">Система оценки</div><div class="card-sub">Текущий набор критериев</div></div></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Критериев</span><span class="spacer"></span><span class="mono">' + criteriaCount + '</span></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Категорий</span><span class="spacer"></span><span class="mono">' + catalog.categories.length + '</span></div>' +
       '<div class="row" style="padding:7px 0"><span class="small muted">Жанров</span><span class="spacer"></span><span class="mono">' + catalog.genres.length + '</span></div>' +
@@ -744,7 +718,21 @@ window.K = window.K || {};
       '<div class="formula-legend" style="margin-top:8px"><span><i class="dot" style="background:var(--accent)"></i>60</span><span><i class="dot" style="background:#7c8f80"></i>25</span><span><i class="dot" style="background:#9c8e64"></i>15</span></div>' +
       '</div>'
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">Обновления</div><div class="card-sub">Проверка новых версий и установка в один клик</div></div></div>' +
+    const databaseCard =
+      '<div class="card pad"><div class="card-head"><div><div class="card-title">Локальная база данных</div><div class="card-sub">Личное хранилище оценок и резервные копии на этом компьютере</div></div>' +
+      '<span class="chip good">' + U.esc(info.backend === 'sqlite' ? 'SQLite' : info.backend) + '</span></div>' +
+      '<div class="tiny dim" style="line-height:1.7;word-break:break-all"><b style="color:var(--muted)">Файл:</b> ' + U.esc(info.dbPath) + '</div>' +
+      '<div class="row wrap" style="gap:8px;margin-top:12px">' +
+      '<button class="btn" data-action="open-folder">Открыть папку</button>' +
+      '<button class="btn" data-action="export-json">' + U.icon('export', 14) + ' Экспорт профиля (.json)</button>' +
+      '<button class="btn" data-action="export-csv">' + U.icon('export', 14) + ' Таблица оценок (.csv)</button>' +
+      '<button class="btn" data-action="import-json">' + U.icon('import', 14) + ' Импорт профиля</button>' +
+      '<span class="spacer"></span><button class="btn danger" data-action="reset">Сбросить всё</button></div>' +
+      '<div class="tiny dim" style="margin-top:10px">Экспорт включает профиль, игры, все оценки и установленные патчи. Импорт объединяет данные по id записей.</div>' +
+      '</div>'
+
+    const updatesCard =
+      '<div class="card pad"><div class="card-head"><div><div class="card-title">Обновления</div><div class="card-sub">Проверка новых версий и установка в один клик</div></div></div>' +
       '<div class="row" style="padding:6px 0"><span class="small muted">Ваша версия</span><span class="spacer"></span><span class="mono">' + U.esc(info.version) + '</span></div>' +
       '<div id="upd-state" style="min-height:26px"><div class="tiny dim">Нажмите «Проверить», чтобы сравнить с GitHub.</div></div>' +
       '<div class="row wrap" style="gap:8px;margin-top:12px">' +
@@ -752,8 +740,8 @@ window.K = window.K || {};
       '<button class="btn ghost" data-upd="releases" title="История версий внутри приложения">' + U.icon('chevron', 13) + ' Список релизов</button>' +
       '</div></div>'
 
-    html += '<div class="card pad"><div class="card-head"><div><div class="card-title">О приложении</div><div class="card-sub">Критериум</div></div></div>' +
-      '<div class="row" style="padding:6px 0"><span class="small muted">Версия</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.version) + '</span></div>' +
+    const aboutCard =
+      '<div class="card pad"><div class="card-head"><div><div class="card-title">О приложении</div><div class="card-sub">Критериум</div></div></div>' +
       '<div class="row" style="padding:6px 0"><span class="small muted">Electron</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.electron) + '</span></div>' +
       '<div class="row" style="padding:6px 0"><span class="small muted">Node</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.node) + '</span></div>' +
       '<div class="row" style="padding:6px 0"><span class="small muted">Chromium</span><span class="spacer"></span><span class="tiny mono">' + U.esc(info.chrome) + '</span></div>' +
@@ -765,9 +753,16 @@ window.K = window.K || {};
       '<div class="tiny dim" style="line-height:1.65;margin-top:10px">Личные оценки и черновики хранятся локально в SQLite (доступен полный экспорт), каталог игр и региональные цены загружаются из Steam, а публичный профиль, рецензии участников, награды и официальные патчи синхронизируются через общую базу сообщества.</div>' +
       '</div>'
 
-    html += '</div>'
+    html += '<div class="two-col"><div style="display:flex;flex-direction:column;gap:14px">'
+    html += appearanceCard
+    html += databaseCard
+    html += '</div><div style="display:flex;flex-direction:column;gap:14px">'
+    html += scoringCard
+    html += updatesCard
+    html += aboutCard
+    html += '</div></div>'
+
     view.innerHTML = shell(html)
-    window.K.Social.renderLinkedAccounts(U.$('#linked-accounts', view))
 
     U.$$('[data-external]', view).forEach((btn) => btn.addEventListener('click', () => api.openExternal(btn.dataset.external)))
 
@@ -926,6 +921,7 @@ window.K = window.K || {};
 
     U.$('[data-action="open-folder"]', view).addEventListener('click', () => api.data.folder())
     U.$('[data-action="export-json"]', view).addEventListener('click', exportJson)
+    U.$('[data-action="export-csv"]', view).addEventListener('click', exportCsv)
     U.$('[data-action="import-json"]', view).addEventListener('click', importJson)
     U.$('[data-action="reset"]', view).addEventListener('click', resetAll)
   }
