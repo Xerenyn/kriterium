@@ -635,6 +635,40 @@ function createCloud(configPath, safeStorage, options = {}) {
       return Array.isArray(rows) ? rows[0] || null : null
     },
 
+    /* Голоса за рецензии: { review_id, likes, dislikes, my_vote } по списку id.
+       Доступно и гостям — счётчики публичны, свой голос у гостя всегда 0. */
+    async reviewVotes(reviewIds) {
+      await load()
+      const ids = (Array.isArray(reviewIds) ? reviewIds : []).filter(Boolean).slice(0, 100)
+      if (!ids.length || !configured()) return []
+      try {
+        await refreshSession()
+        const rows = await rest('rpc/get_review_votes', {
+          method: 'POST',
+          body: JSON.stringify({ review_ids: ids })
+        })
+        return Array.isArray(rows) ? rows : []
+      } catch { return [] }
+    },
+
+    /* Поставить/сменить/отозвать голос: vote 1 или -1, повторный клик отзывает */
+    async voteReview(reviewId, vote) {
+      await ensureSession()
+      const value = vote === -1 ? -1 : 1
+      const current = await rest('review_votes?select=vote&review_id=eq.' + encodeURIComponent(reviewId) + '&user_id=eq.' + encodeURIComponent(session.user.id) + '&limit=1')
+      const mine = Array.isArray(current) && current[0] ? current[0].vote : 0
+      if (mine === value) {
+        await rest('review_votes?review_id=eq.' + encodeURIComponent(reviewId) + '&user_id=eq.' + encodeURIComponent(session.user.id), { method: 'DELETE' })
+        return { retracted: true }
+      }
+      await rest('review_votes?on_conflict=review_id,user_id', {
+        method: 'POST',
+        headers: { prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({ review_id: reviewId, user_id: session.user.id, vote: value })
+      })
+      return { retracted: false }
+    },
+
     async isDeveloper() {
       await ensureSession()
       return !!(await rest('rpc/is_app_developer', {

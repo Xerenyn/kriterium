@@ -37,6 +37,41 @@ window.K = window.K || {};
   let catalogFavoritesMode = false
   let catalogCache = {} // 'section|search|region' -> { ts, items, start, total, hasMore }
 
+  /* ---------- Голосование за рецензии на странице игры ---------- */
+
+  let activeReviews = []
+  let activeVotes = new Map() // review_id -> { review_id, likes, dislikes, my_vote }
+  let reviewsSort = 'votes' // votes | date
+
+  function sortActiveReviews() {
+    const list = activeReviews.slice()
+    if (reviewsSort === 'date') {
+      list.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+    } else {
+      list.sort((a, b) => {
+        const va = activeVotes.get(String(a.id)) || { likes: 0, dislikes: 0 }
+        const vb = activeVotes.get(String(b.id)) || { likes: 0, dislikes: 0 }
+        const scoreA = va.likes - va.dislikes
+        const scoreB = vb.likes - vb.dislikes
+        if (scoreB !== scoreA) return scoreB - scoreA
+        if (vb.likes !== va.likes) return vb.likes - va.likes
+        return new Date(b.updated_at) - new Date(a.updated_at)
+      })
+    }
+    return list
+  }
+
+  function reviewsListHtml() {
+    return '<div class="community-reviews">' + sortActiveReviews().map((review) => reviewCard(review)).join('') + '</div>'
+  }
+
+  function voteButtonsHtml(review) {
+    const v = activeVotes.get(String(review.id)) || { likes: 0, dislikes: 0, my_vote: 0 }
+    return '<button type="button" class="btn ghost sm vote-btn' + (v.my_vote === 1 ? ' active' : '') + '" data-vote="1" data-vote-review="' + U.attr(review.id) + '" title="Рецензия полезная">👍 <span class="mono">' + U.formatNumber(v.likes, 0) + '</span></button>' +
+      '<button type="button" class="btn ghost sm vote-btn' + (v.my_vote === -1 ? ' active' : '') + '" data-vote="-1" data-vote-review="' + U.attr(review.id) + '" title="Не согласен с рецензией">👎 <span class="mono">' + U.formatNumber(v.dislikes, 0) + '</span></button>'
+  }
+
+
   function toggleFavorite(appId, gameItem) {
     const id = Number(appId)
     if (!id) return false
@@ -1198,8 +1233,11 @@ window.K = window.K || {};
           '<div class="tiny dim" style="margin-bottom:4px">Оценки участников (' + comm.count + '):</div>' +
           commReviews.map((rev) => {
             const p = rev.profile || {}
+            const rowName = (p.avatar || '🎮') + ' ' + (p.display_name || p.handle || 'Участник')
             return '<div class="card-comm-row" data-inspect-review="' + U.attr(rev.id) + '" data-inspect-game="' + U.attr(game.title) + '" title="Нажмите, чтобы открыть полный разбор">' +
-              '<span class="tiny">' + U.esc((p.avatar || '🎮') + ' ' + (p.display_name || p.handle || 'Участник')) + '</span>' +
+              (p.handle
+                ? '<span class="tiny text-link" data-profile-link="' + U.attr(p.handle) + '" title="Открыть профиль участника">' + U.esc(rowName) + '</span>'
+                : '<span class="tiny">' + U.esc(rowName) + '</span>') +
               (rev.verdict ? '<span class="tiny dim ellipsis" style="flex:1">' + U.esc(rev.verdict) + '</span>' : '<span class="spacer"></span>') +
               '<b class="tiny mono" style="color:' + U.scoreColor(rev.score) + '">' + U.formatNumber(rev.score) + '</b></div>'
           }).join('') + '</div>' : '') +
@@ -1357,6 +1395,13 @@ window.K = window.K || {};
         try { shared = await api.cloud.publicGame(id) } catch (err) { sharedError = err.message || String(err) }
       }
       if (!view.isConnected || location.hash !== '#/steam/' + id) return
+      // Голоса за рецензии: топ-рецензии поднимаются наверх
+      activeReviews = shared?.reviews || []
+      if (activeReviews.length) {
+        const rows = await api.cloud.reviewVotes(activeReviews.map((r) => r.id)).catch(() => [])
+        for (const row of rows || []) activeVotes.set(String(row.review_id), row)
+      }
+      if (!view.isConnected || location.hash !== '#/steam/' + id) return
       view.innerHTML = shell(steamGameHtml(steam, null, status, shared, sharedError))
       view.scrollTop = 0
       bindSteamGame(view, steam, null, status, shared)
@@ -1457,7 +1502,12 @@ window.K = window.K || {};
         (status.signedIn && !game ? ' <button class="btn ghost sm" id="add-shared-game">Закрепить в каталоге</button>' : '') +
         '</div>'
     } else {
-      html += '<div class="community-reviews">' + shared.reviews.map((review) => reviewCard(review)).join('') + '</div>'
+      html += '<div class="row" style="margin-bottom:10px"><span class="tiny dim">Сортировка:</span>' +
+        '<div class="tabs" id="reviews-sort" style="margin-left:8px">' +
+        '<button class="tab' + (reviewsSort === 'votes' ? ' active' : '') + '" data-sort="votes">Популярные</button>' +
+        '<button class="tab' + (reviewsSort === 'date' ? ' active' : '') + '" data-sort="date">Новые</button>' +
+        '</div></div>' +
+        '<div id="community-reviews-list">' + reviewsListHtml() + '</div>'
     }
     html += '</div><div class="card pad">' + cardTitle('Об игре и теги Steam', 'Информация из Steam Store') +
       '<div class="small muted" style="line-height:1.7">' +
@@ -1557,8 +1607,16 @@ window.K = window.K || {};
       '<div class="row wrap" style="gap:14px;align-items:center">' +
         '<div class="mini-avatar" style="width:44px;height:44px;font-size:22px">' + U.esc(profile.avatar || '🎮') + '</div>' +
         '<div class="grow">' +
-          '<div class="row wrap" style="gap:8px"><b>' + U.esc(profile.display_name || profile.handle || 'Участник') + '</b>' + badgePillsHtml(profile, false) + '</div>' +
+          '<div class="row wrap" style="gap:8px">' +
+          (profile.handle
+            ? '<button type="button" class="text-link" data-profile-link="' + U.attr(profile.handle) + '" title="Открыть профиль участника">' + U.esc(profile.display_name || profile.handle) + '</button>'
+            : '<b>' + U.esc(profile.display_name || 'Участник') + '</b>') +
+          badgePillsHtml(profile, false) + '</div>' +
           '<div class="tiny dim" style="margin-top:3px">Жанр: ' + U.esc(genreLabel) + ' · Заполнено: ' + Math.round((Number(review.coverage ?? computed.coverage) || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</div>' +
+          '<div class="row wrap" style="gap:6px;margin-top:9px">' +
+          '<button type="button" class="btn ghost sm vote-btn" data-modal-vote="1" title="Рецензия полезная">👍 <span class="mono" id="mv-likes">…</span></button>' +
+          '<button type="button" class="btn ghost sm vote-btn" data-modal-vote="-1" title="Не согласен с рецензией">👎 <span class="mono" id="mv-dislikes">…</span></button>' +
+          '<span class="tiny dim">Голосуйте за полезную рецензию — она поднимется выше в списке</span></div>' +
         '</div>' +
         '<div>' + C.ring(total, { size: 96, stroke: 8, color: U.scoreColor(total), sublabel: grade ? grade.label : '' }) + '</div>' +
       '</div>' +
@@ -1599,11 +1657,45 @@ window.K = window.K || {};
       html += '</tbody></table></div>'
     }
 
-    U.openModal({
+    const modal = U.openModal({
       title: (gameTitle || 'Игра') + ' — оценка ' + (profile.display_name || profile.handle || 'участника'),
       width: 820,
       body: html
     })
+    /* Имя участника в модале ведёт на его профиль: модал закрывается, открывается страница */
+    U.$$('[data-profile-link]', modal.body).forEach((el) => el.addEventListener('click', () => {
+      modal.close()
+      window.K.app.navigate('#/person/' + el.dataset.profileLink)
+    }))
+    /* Голосование за рецензию в модале */
+    const refreshModalVotes = async () => {
+      try {
+        const rows = await api.cloud.reviewVotes([review.id])
+        const v = rows && rows[0]
+        const likesEl = U.$('#mv-likes', modal.body)
+        const dislikesEl = U.$('#mv-dislikes', modal.body)
+        if (!likesEl || !dislikesEl) return
+        likesEl.textContent = v ? U.formatNumber(v.likes, 0) : '0'
+        dislikesEl.textContent = v ? U.formatNumber(v.dislikes, 0) : '0'
+        U.$('[data-modal-vote="1"]', modal.body)?.classList.toggle('active', !!v && v.my_vote === 1)
+        U.$('[data-modal-vote="-1"]', modal.body)?.classList.toggle('active', !!v && v.my_vote === -1)
+      } catch { /* счётчики остались прежними */ }
+    }
+    refreshModalVotes()
+    U.$$('[data-modal-vote]', modal.body).forEach((btn) => btn.addEventListener('click', async () => {
+      const st = await getStatus()
+      if (!st.signedIn) { U.toast('Войдите, чтобы голосовать за рецензии', 'bad'); return }
+      btn.disabled = true
+      try {
+        await api.cloud.voteReview(review.id, Number(btn.dataset.modalVote))
+        await refreshModalVotes()
+        U.toast('Голос учтён', 'good')
+      } catch (err) {
+        U.toast(err.message || 'Не удалось учесть голос', 'bad')
+      } finally {
+        btn.disabled = false
+      }
+    }))
   }
 
   function bindReviewInspectors(container, gamesList) {
@@ -1620,6 +1712,63 @@ window.K = window.K || {};
         if (found) openCommunityReviewModal(found.review, found.title)
       })
     })
+    /* Имя участника в строке рецензии ведёт на его профиль */
+    U.$$('[data-profile-link]', container).forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        const handle = el.dataset.profileLink
+        if (handle) window.K.app.navigate('#/person/' + handle)
+      })
+    })
+  }
+
+  /* Привязки внутри списка рецензий: перезапускается после каждой перерисовки списка */
+  function bindSteamReviewList(view, steam, status, shared) {
+    U.$$('[data-open-review]', view).forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-route]')) return
+        if (e.target.closest('[data-vote-review]')) return
+        e.stopPropagation()
+        const revId = el.dataset.openReview
+        const rev = (shared?.reviews || []).find((r) => String(r.id) === String(revId))
+        if (rev) openCommunityReviewModal(rev, steam.title)
+      })
+    })
+    U.$$('[data-vote-review]', view).forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation()
+        const id = btn.dataset.voteReview
+        const vote = Number(btn.dataset.vote)
+        const st = await getStatus()
+        if (!st.signedIn) { U.toast('Войдите, чтобы голосовать за рецензии', 'bad'); return }
+        btn.disabled = true
+        try {
+          await api.cloud.voteReview(id, vote)
+          const rows = await api.cloud.reviewVotes([id])
+          if (rows && rows[0]) activeVotes.set(String(rows[0].review_id), rows[0])
+          const listEl = U.$('#community-reviews-list', view)
+          if (listEl) {
+            listEl.innerHTML = reviewsListHtml()
+            bindSteamReviewList(view, steam, status, shared)
+          }
+          U.toast('Голос учтён', 'good')
+        } catch (err) {
+          U.toast(err.message || 'Не удалось учесть голос', 'bad')
+          btn.disabled = false
+        }
+      })
+    })
+    U.$('#reviews-sort', view)?.querySelectorAll('[data-sort]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        reviewsSort = btn.dataset.sort
+        btn.closest('.tabs').querySelectorAll('[data-sort]').forEach((b) => b.classList.toggle('active', b === btn))
+        const listEl = U.$('#community-reviews-list', view)
+        if (listEl) {
+          listEl.innerHTML = reviewsListHtml()
+          bindSteamReviewList(view, steam, status, shared)
+        }
+      })
+    })
   }
 
   function reviewCard(review) {
@@ -1627,7 +1776,9 @@ window.K = window.K || {};
     const genreLabel = window.K.app.genreName(review.genre_id || '')
     return '<article class="community-review" data-open-review="' + U.attr(review.id) + '" style="cursor:pointer" title="Нажмите, чтобы посмотреть полный разбор по категориям">' +
       '<div class="row wrap"><span class="mini-avatar">' + U.esc(profile.avatar || '🎮') + '</span>' +
-      '<button class="text-link" data-route="#/person/' + U.attr(profile.handle || '') + '">' + U.esc(profile.display_name || profile.handle || 'Участник') + '</button>' +
+      (profile.handle
+        ? '<button class="text-link" data-route="#/person/' + U.attr(profile.handle) + '" title="Открыть профиль участника">' + U.esc(profile.display_name || profile.handle) + '</button>'
+        : '<b>' + U.esc(profile.display_name || 'Участник') + '</b>') +
       badgePillsHtml(profile, false) +
       '<span class="chip">' + U.esc(genreLabel || 'Жанр не указан') + '</span>' +
       '<span class="spacer"></span><b class="review-score" style="color:' + U.scoreColor(review.score) + '">' + U.formatNumber(review.score) + ' / 100</b></div>' +
@@ -1637,7 +1788,9 @@ window.K = window.K || {};
         (review.pros ? '<span class="tiny" style="color:var(--good)">+ ' + U.esc(String(review.pros).split(/\r?\n/)[0]) + '</span>' : '') +
         (review.cons ? '<span class="tiny" style="color:var(--bad)">− ' + U.esc(String(review.cons).split(/\r?\n/)[0]) + '</span>' : '') +
         '</div>' : '') +
-      '<div class="row wrap" style="margin-top:9px"><span class="tiny dim">Заполнено: ' + Math.round((review.coverage || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</span>' +
+      '<div class="row wrap" style="margin-top:9px">' +
+      voteButtonsHtml(review) +
+      '<span class="tiny dim" style="margin-left:6px">Заполнено: ' + Math.round((review.coverage || 0) * 100) + '% · ' + U.esc(U.formatDate(review.updated_at)) + '</span>' +
       '<span class="spacer"></span><button type="button" class="btn ghost sm" data-open-review="' + U.attr(review.id) + '">Открыть полный разбор</button></div></article>'
   }
 
@@ -1658,15 +1811,7 @@ window.K = window.K || {};
       })
     }
     U.$$('[data-external]', view).forEach((button) => button.addEventListener('click', () => api.openExternal(button.dataset.external)))
-    U.$$('[data-open-review]', view).forEach((el) => {
-      el.addEventListener('click', (e) => {
-        if (e.target.closest('[data-route]')) return
-        e.stopPropagation()
-        const revId = el.dataset.openReview
-        const rev = (shared?.reviews || []).find((r) => String(r.id) === String(revId))
-        if (rev) openCommunityReviewModal(rev, steam.title)
-      })
-    })
+    bindSteamReviewList(view, steam, status, shared)
     const shots = (Array.isArray(steam.screenshots) ? steam.screenshots : [])
       .map((s) => ({ thumb: safeSteamImage(s.thumb), full: safeSteamImage(s.full || s.thumb) }))
       .filter((s) => s.thumb)
