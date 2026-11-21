@@ -1,1 +1,9 @@
 project_id = "kriterium"
+
+[auth]
+enable_manual_linking = true
+
+# Browser redirects (Steam, Shikimori) and Telegram webhooks carry no Supabase JWT;
+# auth-bridge checks the caller's token itself where an account is required.
+[functions.auth-bridge]
+verify_jwt = false

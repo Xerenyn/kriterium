@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
-const { createCloud, normalizeBaseUrl } = require('../src/core/cloud')
+const { createCloud, normalizeBaseUrl, openLoopback, accountLabel, remainingSignInMethods } = require('../src/core/cloud')
 
 test('Supabase URL validation only accepts approved project origins', () => {
   assert.equal(normalizeBaseUrl('https://krit-demo.supabase.co', false), 'https://krit-demo.supabase.co')
@@ -46,6 +46,55 @@ test('cloud settings persist only the public project config and validate sign-up
   fs.writeFileSync(bomPath, '\ufeff' + JSON.stringify({ url: 'https://krit-demo.supabase.co', anonKey: 'public_key_for_test', encryptedSession: '' }), 'utf8')
   const legacyConfig = createCloud(bomPath, safeStorage, { isPackaged: true })
   assert.equal((await legacyConfig.status()).configured, true)
+})
+
+test('browser sign-in callback is accepted only with the state of this attempt', async () => {
+  const loopback = await openLoopback({ ports: [0], state: 'state-of-this-attempt', timeoutMs: 5000 })
+  const base = 'http://127.0.0.1:' + loopback.port + '/callback'
+
+  const foreign = await fetch(base + '?state=someone-else&code=stolen')
+  assert.equal(foreign.status, 404)
+
+  const own = await fetch(base + '?state=state-of-this-attempt&code=abc123')
+  assert.equal(own.status, 200)
+  assert.match(await own.text(), /Готово/)
+  const params = await loopback.result
+  assert.equal(params.get('code'), 'abc123')
+})
+
+test('browser sign-in gives up after its deadline and can be cancelled', async () => {
+  const expired = await openLoopback({ ports: [0], state: 'state-of-this-attempt', timeoutMs: 30 })
+  await assert.rejects(expired.result, /истекло/)
+
+  const controller = new AbortController()
+  const cancelled = await openLoopback({ ports: [0], state: 'state-of-this-attempt', timeoutMs: 5000, signal: controller.signal })
+  controller.abort()
+  await assert.rejects(cancelled.result, /отменён/)
+})
+
+test('placeholder addresses of Steam, Shikimori and Telegram accounts are never shown or counted as a password login', () => {
+  const steamUser = {
+    email: 'steam.76561198000000000@users.kriterium.invalid',
+    user_metadata: { display_name: 'xerenyn', sign_in_provider: 'steam' },
+    identities: [{ provider: 'email' }]
+  }
+  assert.equal(accountLabel(steamUser), 'Steam · xerenyn')
+  assert.equal(accountLabel({ email: 'owner@example.com' }), 'owner@example.com')
+
+  assert.equal(remainingSignInMethods(steamUser, ['steam'], 'steam'), 0)
+  assert.equal(remainingSignInMethods(steamUser, ['steam', 'telegram'], 'steam'), 1)
+  const googleAndPassword = { email: 'owner@example.com', identities: [{ provider: 'email' }, { provider: 'google' }] }
+  assert.equal(remainingSignInMethods(googleAndPassword, [], 'google'), 1)
+  assert.equal(remainingSignInMethods({ email: 'owner@gmail.com', identities: [{ provider: 'google' }] }, [], 'google'), 0)
+})
+
+test('external sign-in links and pending attempts are writable only by the server', () => {
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '0010_external_sign_in.sql'), 'utf8')
+  assert.match(migration, /revoke all on public\.external_identities from anon, authenticated/i)
+  assert.match(migration, /grant select on public\.external_identities to authenticated/i)
+  assert.doesNotMatch(migration, /grant (insert|update|delete)[^;]*external_identities/i)
+  assert.match(migration, /revoke all on public\.auth_bridge_flows from anon, authenticated/i)
+  assert.doesNotMatch(migration, /grant [^;]*auth_bridge_flows/i)
 })
 
 test('developer bootstrap and application patches are server-locked', () => {

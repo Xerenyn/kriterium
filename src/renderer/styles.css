@@ -1376,3 +1376,18 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
   white-space: pre-line;
 }
 
+/* ---------- вход через сервисы и привязанные аккаунты ---------- */
+.auth-providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; }
+.auth-providers .btn { justify-content: center; }
+.auth-providers .btn svg, .link-icon svg { color: var(--accent); }
+.auth-wait { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.auth-wait[hidden] { display: none; }
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 16px 0 14px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+.auth-code { width: max-content; margin: 14px auto 4px; padding: 10px 18px; border: 1px dashed var(--line); border-radius: 10px; background: var(--bg-2); font-size: 22px; font-weight: 600; letter-spacing: .18em; font-variant-numeric: tabular-nums; user-select: all; }
+.link-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.link-row:first-child { border-top: 0; }
+.link-icon { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: 9px; background: var(--panel-3); border: 1px solid var(--line-soft); color: var(--muted); }
+.link-name { font-size: 13px; font-weight: 600; }
+.link-state { color: var(--dim); }
+.link-state.on { color: var(--good); }

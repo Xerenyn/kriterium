@@ -164,6 +164,19 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
+/* Вход завершается в браузере или Telegram — потом возвращаем пользователя в окно приложения */
+async function withAppFocusAfter(promise) {
+  try {
+    return await promise
+  } finally {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  }
+}
+
 function registerIpc() {
   ipcMain.handle('app:info', () => ({
     name: app.getName(),
@@ -208,6 +221,12 @@ function registerIpc() {
   ipcMain.handle('cloud:signIn', (_e, input) => cloud.signIn(input))
   ipcMain.handle('cloud:signOut', () => cloud.signOut())
   ipcMain.handle('cloud:confirmSession', () => cloud.confirmSession())
+  ipcMain.handle('cloud:authProviders', () => cloud.authProviders())
+  ipcMain.handle('cloud:signInWith', (_e, provider) => withAppFocusAfter(cloud.signInWithProvider(provider)))
+  ipcMain.handle('cloud:linkProvider', (_e, provider) => withAppFocusAfter(cloud.linkProvider(provider)))
+  ipcMain.handle('cloud:cancelAuth', () => cloud.cancelAuth())
+  ipcMain.handle('cloud:linkedAccounts', () => cloud.linkedAccounts())
+  ipcMain.handle('cloud:unlinkProvider', (_e, provider) => cloud.unlinkProvider(provider))
   ipcMain.handle('cloud:myProfile', () => cloud.myProfile())
   ipcMain.handle('cloud:isDeveloper', () => cloud.isDeveloper())
   ipcMain.handle('cloud:setProfileBadges', (_e, handle, badges) => cloud.setProfileBadges(handle, badges))
@@ -330,7 +349,11 @@ function registerIpc() {
 app.whenReady().then(() => {
   dataDir = process.env.KRIT_DATA_DIR || path.join(app.getPath('userData'), 'data')
   store = createStore(dataDir)
-  cloud = createCloud(path.join(app.getPath('userData'), 'cloud.json'), safeStorage, { isPackaged: app.isPackaged })
+  cloud = createCloud(path.join(app.getPath('userData'), 'cloud.json'), safeStorage, {
+    isPackaged: app.isPackaged,
+    openExternal: (url) => shell.openExternal(url),
+    onAuthPrompt: (prompt) => send('cloud:authPrompt', prompt)
+  })
   registerIpc()
   createWindow()
 

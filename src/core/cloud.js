@@ -2,11 +2,112 @@
 
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const http = require('node:http')
+const crypto = require('node:crypto')
 
 const PROFILE_FIELDS = 'id,handle,display_name,bio,avatar,is_public,badges,created_at'
 const APP_USER_AGENT = 'Kriterium/1.0 (Windows desktop app)'
 const DEFAULT_SUPABASE_URL = 'https://fubyxivjqtnmzpwinzge.supabase.co'
 const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1Ynl4aXZqcXRubXpwd2luemdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NDQ5MTgsImV4cCI6MjEwOTEyMDkxOH0.0_ZMAOqk0mMVIR4g7AnWCSR4oUMwbHPDl0LwdjvdVrE'
+
+// Steam, Discord, Shikimori and Telegram accounts get a placeholder address from supabase/functions/auth-bridge;
+// the domain must stay equal there. Such addresses are never shown to the user.
+const SYNTHETIC_EMAIL_DOMAIN = 'users.kriterium.invalid'
+const BRIDGE_PATH = '/functions/v1/auth-bridge'
+const BUILT_IN_PROVIDERS = ['google']
+const BRIDGE_PROVIDERS = ['steam', 'discord', 'shikimori', 'telegram']
+const PROVIDER_LABELS = { google: 'Google', discord: 'Discord', steam: 'Steam', shikimori: 'Shikimori', telegram: 'Telegram' }
+const LOOPBACK_PORTS = [47615, 47616, 47617]
+const PROVIDER_FLOW_TIMEOUT_MS = 3 * 60 * 1000
+const TELEGRAM_POLL_MS = 2000
+
+class AuthCancelled extends Error {}
+
+function randomToken(bytes) {
+  return crypto.randomBytes(bytes).toString('base64url')
+}
+
+function isSyntheticEmail(email) {
+  return String(email || '').toLowerCase().endsWith('@' + SYNTHETIC_EMAIL_DOMAIN)
+}
+
+function accountLabel(user) {
+  if (!user) return ''
+  if (user.email && !isSyntheticEmail(user.email)) return user.email
+  const meta = user.user_metadata || {}
+  const provider = PROVIDER_LABELS[meta.sign_in_provider] || PROVIDER_LABELS[user.app_metadata?.provider] || ''
+  const name = meta.display_name || meta.full_name || meta.name || ''
+  return [provider, name].filter(Boolean).join(' · ') || 'аккаунт без почты'
+}
+
+/* Способы входа, которые останутся у пользователя без указанного провайдера.
+   Почта считается, только если это настоящая почта с паролем (identity "email"). */
+function remainingSignInMethods(user, externalProviders, without) {
+  const identities = Array.isArray(user?.identities) ? user.identities : []
+  const email = identities.some((i) => i.provider === 'email') && !isSyntheticEmail(user.email) ? 1 : 0
+  const builtIn = identities.filter((i) => BUILT_IN_PROVIDERS.includes(i.provider) && i.provider !== without).length
+  const bridged = externalProviders.filter((p) => p !== without).length
+  return email + builtIn + bridged
+}
+
+function loopbackPage(title, text) {
+  const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch])
+  return '<!doctype html><html lang="ru"><meta charset="utf-8"><title>Критериум</title>' +
+    '<body style="margin:0;height:100vh;display:grid;place-items:center;background:#0b0b0c;color:#e8e6e2;font-family:Segoe UI,system-ui,sans-serif">' +
+    '<div style="text-align:center"><h2 style="font-weight:600">' + esc(title) + '</h2><p style="color:#a3a09a">' + esc(text) + '</p></div></body></html>'
+}
+
+/* Принимает возврат из браузера на 127.0.0.1. Ответ засчитывается только с нашим state,
+   поэтому посторонний запрос на порт не завершит вход. */
+async function openLoopback({ ports = LOOPBACK_PORTS, state, timeoutMs = PROVIDER_FLOW_TIMEOUT_MS, signal } = {}) {
+  let server = null
+  for (const candidate of ports) {
+    const attempt = http.createServer()
+    const listening = await new Promise((resolve) => {
+      attempt.once('error', () => resolve(false))
+      attempt.listen(candidate, '127.0.0.1', () => resolve(true))
+    })
+    if (listening) { server = attempt; break }
+  }
+  if (!server) throw new Error('Порты ' + ports.join(', ') + ' заняты другой программой. Закройте её и попробуйте снова.')
+
+  let settle = null
+  const result = new Promise((resolve, reject) => {
+    const onAbort = () => settle(new AuthCancelled('Вход отменён.'))
+    const timer = setTimeout(() => settle(new Error('Время ожидания входа истекло. Попробуйте ещё раз.')), timeoutMs)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    settle = (err, params) => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      server.close()
+      if (err) reject(err)
+      else resolve(params)
+    }
+    server.on('request', (req, res) => {
+      const url = new URL(req.url, 'http://127.0.0.1')
+      if (url.pathname !== '/callback' || url.searchParams.get('state') !== state) {
+        res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' }).end('Not found')
+        return
+      }
+      const failure = url.searchParams.get('error_description') || url.searchParams.get('error')
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(failure
+        ? loopbackPage('Вход не выполнен', failure)
+        : loopbackPage('Готово', 'Можно закрыть эту вкладку и вернуться в Критериум.'))
+      settle(null, url.searchParams)
+    })
+  })
+  return { port: server.address().port, result, close: () => settle(new AuthCancelled('Вход отменён.')) }
+}
+
+function abortableDelay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new AuthCancelled('Вход отменён.'))
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve() }, ms)
+    const onAbort = () => { clearTimeout(timer); reject(new AuthCancelled('Вход отменён.')) }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
 
 function safeError(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback
@@ -167,11 +268,12 @@ function createCloud(configPath, safeStorage, options = {}) {
       signedIn: !!(sessionActive && session && session.access_token && session.user),
       user: session && session.user ? {
         id: session.user.id,
-        email: session.user.email || ''
+        email: isSyntheticEmail(session.user.email) ? '' : (session.user.email || ''),
+        label: accountLabel(session.user)
       } : null,
       // Есть сохранённый вход с прошлого запуска, который пользователь ещё не подтвердил
       restorableSession: !!(session && session.user && !sessionActive),
-      restorableEmail: session && session.user ? (session.user.email || '') : '',
+      restorableAccount: session && session.user ? accountLabel(session.user) : '',
       encryptionAvailable: !!(safeStorage && safeStorage.isEncryptionAvailable())
     }
   }
@@ -272,6 +374,118 @@ function createCloud(configPath, safeStorage, options = {}) {
     return request('/rest/v1/' + pathname, options)
   }
 
+  /* ---------- вход и привязка через Google, Discord, Steam, Shikimori, Telegram ---------- */
+
+  let activeAuth = null
+
+  async function openExternal(url) {
+    if (typeof options.openExternal !== 'function') throw new Error('Браузер для входа недоступен.')
+    await options.openExternal(url)
+  }
+
+  async function finishSession(data) {
+    await persistSession(data)
+    sessionActive = true
+    return publicStatus()
+  }
+
+  async function applyBridgeOutcome(outcome) {
+    if (outcome.error) throw new Error(outcome.error)
+    if (outcome.token_hash) {
+      return finishSession(await request('/auth/v1/verify', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'magiclink', token_hash: outcome.token_hash })
+      }, false))
+    }
+    if (outcome.linked) return publicStatus()
+    throw new Error('Сервер входа вернул неожиданный ответ.')
+  }
+
+  async function browserFlow(provider, mode, signal) {
+    const state = randomToken(24)
+    const loopback = await openLoopback({ state, signal })
+    // Google returns an id_token through the browser; only its nonce hash leaves the app,
+    // so the token is useless to anyone who reads it from browser history.
+    const nonce = provider === 'google' ? randomToken(24) : ''
+    try {
+      const begin = { provider, mode, port: loopback.port, state }
+      if (nonce) begin.nonce = crypto.createHash('sha256').update(nonce).digest('hex')
+      const { url } = await request(BRIDGE_PATH + '/begin', { method: 'POST', body: JSON.stringify(begin) })
+      await openExternal(url)
+    } catch (err) {
+      loopback.close()
+      loopback.result.catch(() => {})
+      throw err
+    }
+
+    const params = await loopback.result
+    const failure = params.get('error_description') || params.get('error')
+    if (failure) throw new Error(failure)
+    const idToken = params.get('id_token')
+    if (!idToken) return applyBridgeOutcome(Object.fromEntries(params))
+    const data = await request('/auth/v1/token?grant_type=id_token', {
+      method: 'POST',
+      body: JSON.stringify({ provider: 'google', id_token: idToken, nonce, link_identity: mode === 'link' })
+    }, mode === 'link' ? undefined : false).catch((err) => {
+      if (/already linked/i.test(err.message)) throw new Error('Этот аккаунт Google уже привязан к другому профилю Критериума.')
+      throw err
+    })
+    return data?.access_token ? finishSession(data) : publicStatus()
+  }
+
+  async function telegramFlow(mode, signal) {
+    const state = randomToken(24)
+    const begun = await request(BRIDGE_PATH + '/begin', {
+      method: 'POST',
+      body: JSON.stringify({ provider: 'telegram', mode, port: LOOPBACK_PORTS[0], state })
+    })
+    options.onAuthPrompt?.({ provider: 'telegram', code: begun.code, url: begun.url })
+    await openExternal(begun.url)
+    const deadline = Date.now() + PROVIDER_FLOW_TIMEOUT_MS
+    while (Date.now() < deadline) {
+      await abortableDelay(TELEGRAM_POLL_MS, signal)
+      const outcome = await request(BRIDGE_PATH + '/poll', { method: 'POST', body: JSON.stringify({ flow: begun.flow, state }) })
+      if (!outcome.pending) return applyBridgeOutcome(outcome)
+    }
+    throw new Error('Время ожидания входа истекло. Попробуйте ещё раз.')
+  }
+
+  async function providerFlow(provider, mode) {
+    await load()
+    if (!BUILT_IN_PROVIDERS.includes(provider) && !BRIDGE_PROVIDERS.includes(provider)) throw new Error('Неизвестный способ входа.')
+    if (mode === 'link') await ensureSession()
+    activeAuth?.abort()
+    const controller = new AbortController()
+    activeAuth = controller
+    try {
+      return provider === 'telegram'
+        ? await telegramFlow(mode, controller.signal)
+        : await browserFlow(provider, mode, controller.signal)
+    } catch (err) {
+      if (err instanceof AuthCancelled) return { ...publicStatus(), cancelled: true }
+      throw err
+    } finally {
+      if (activeAuth === controller) activeAuth = null
+    }
+  }
+
+  async function linkedAccounts() {
+    await ensureSession()
+    const [user, external] = await Promise.all([
+      request('/auth/v1/user'),
+      rest('external_identities?select=provider,display_name')
+    ])
+    const linked = {}
+    for (const identity of user.identities || []) {
+      if (!BUILT_IN_PROVIDERS.includes(identity.provider)) continue
+      const data = identity.identity_data || {}
+      linked[identity.provider] = { name: data.full_name || data.name || data.email || '' }
+    }
+    for (const row of external || []) linked[row.provider] = { name: row.display_name || '' }
+    const hasPassword = (user.identities || []).some((i) => i.provider === 'email') && !isSyntheticEmail(user.email)
+    return { email: hasPassword ? user.email : '', linked }
+  }
+
   return {
     async status() {
       await load()
@@ -350,6 +564,51 @@ function createCloud(configPath, safeStorage, options = {}) {
       if (!session) return publicStatus() // refresh discards an expired session
       sessionActive = true
       return publicStatus()
+    },
+
+    /* Какие способы входа включены на сервере: кнопки остальных не показываются */
+    async authProviders() {
+      await load()
+      if (!configured()) return {}
+      const bridge = await request(BRIDGE_PATH + '/providers', {}, false).catch(() => null)
+      const available = {}
+      for (const provider of [...BUILT_IN_PROVIDERS, ...BRIDGE_PROVIDERS]) available[provider] = !!bridge?.[provider]
+      return available
+    },
+
+    signInWithProvider(provider) {
+      return providerFlow(provider, 'login')
+    },
+
+    linkProvider(provider) {
+      return providerFlow(provider, 'link')
+    },
+
+    cancelAuth() {
+      activeAuth?.abort()
+      return true
+    },
+
+    linkedAccounts,
+
+    async unlinkProvider(provider) {
+      await ensureSession()
+      if (BRIDGE_PROVIDERS.includes(provider)) {
+        await request(BRIDGE_PATH + '/unlink', { method: 'POST', body: JSON.stringify({ provider }) })
+        return linkedAccounts()
+      }
+      if (!BUILT_IN_PROVIDERS.includes(provider)) throw new Error('Неизвестный сервис.')
+      const [user, external] = await Promise.all([
+        request('/auth/v1/user'),
+        rest('external_identities?select=provider')
+      ])
+      const identity = (user.identities || []).find((i) => i.provider === provider)
+      if (!identity) throw new Error('Этот сервис не привязан.')
+      if (remainingSignInMethods(user, (external || []).map((r) => r.provider), provider) < 1) {
+        throw new Error('Это единственный способ входа. Сначала привяжите другой сервис.')
+      }
+      await request('/auth/v1/user/identities/' + encodeURIComponent(identity.identity_id), { method: 'DELETE' })
+      return linkedAccounts()
     },
 
     async myProfile() {
@@ -1107,4 +1366,4 @@ function slugify(value) {
     .slice(0, 80) || 'game'
 }
 
-module.exports = { createCloud, normalizeBaseUrl }
+module.exports = { createCloud, normalizeBaseUrl, openLoopback, accountLabel, remainingSignInMethods }

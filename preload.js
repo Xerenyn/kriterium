@@ -45,6 +45,13 @@ contextBridge.exposeInMainWorld('krit', {
     signOut: () => invoke('cloud:signOut'),
 
     confirmSession: () => invoke('cloud:confirmSession'),
+    authProviders: () => invoke('cloud:authProviders'),
+    signInWith: (provider) => invoke('cloud:signInWith', provider),
+    linkProvider: (provider) => invoke('cloud:linkProvider', provider),
+    cancelAuth: () => invoke('cloud:cancelAuth'),
+    linkedAccounts: () => invoke('cloud:linkedAccounts'),
+    unlinkProvider: (provider) => invoke('cloud:unlinkProvider', provider),
+    onAuthPrompt: (cb) => ipcRenderer.on('cloud:authPrompt', (_e, prompt) => cb(prompt)),
     myProfile: () => invoke('cloud:myProfile'),
     isDeveloper: () => invoke('cloud:isDeveloper'),
     setProfileBadges: (handle, badges) => invoke('cloud:setProfileBadges', handle, badges),
