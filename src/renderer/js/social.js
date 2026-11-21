@@ -1746,6 +1746,7 @@ window.K = window.K || {};
           await api.cloud.voteReview(id, vote)
           const rows = await api.cloud.reviewVotes([id])
           if (rows && rows[0]) activeVotes.set(String(rows[0].review_id), rows[0])
+          else activeVotes.delete(String(id)) // голос отозван — убираем из кэша
           const listEl = U.$('#community-reviews-list', view)
           if (listEl) {
             listEl.innerHTML = reviewsListHtml()

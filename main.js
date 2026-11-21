@@ -225,6 +225,8 @@ function registerIpc() {
   ipcMain.handle('cloud:signInWith', (_e, provider) => withAppFocusAfter(cloud.signInWithProvider(provider)))
   ipcMain.handle('cloud:linkProvider', (_e, provider) => withAppFocusAfter(cloud.linkProvider(provider)))
   ipcMain.handle('cloud:cancelAuth', () => cloud.cancelAuth())
+  ipcMain.handle('cloud:reviewVotes', (_e, ids) => cloud.reviewVotes(ids))
+  ipcMain.handle('cloud:voteReview', (_e, id, vote) => cloud.voteReview(id, vote))
   ipcMain.handle('cloud:linkedAccounts', () => cloud.linkedAccounts())
   ipcMain.handle('cloud:unlinkProvider', (_e, provider) => cloud.unlinkProvider(provider))
   ipcMain.handle('cloud:myProfile', () => cloud.myProfile())

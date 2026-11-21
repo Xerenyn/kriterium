@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('krit', {
     myProfile: () => invoke('cloud:myProfile'),
     isDeveloper: () => invoke('cloud:isDeveloper'),
     setProfileBadges: (handle, badges) => invoke('cloud:setProfileBadges', handle, badges),
+    reviewVotes: (ids) => invoke('cloud:reviewVotes', ids),
+    voteReview: (id, vote) => invoke('cloud:voteReview', id, vote),
     updateMyProfile: (input) => invoke('cloud:updateMyProfile', input),
     listProfiles: (query) => invoke('cloud:listProfiles', query),
     publicProfile: (handle) => invoke('cloud:publicProfile', handle),
